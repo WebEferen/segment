@@ -24,15 +24,15 @@ export default defineConfig({
 				resolve: {
 					alias: [
 						{
-							find: /^@webeferen\/segment$/,
+							find: /^segment-state$/,
 							replacement: resolve(import.meta.dirname, 'src/core/index.ts'),
 						},
 						{
-							find: /^@webeferen\/segment\/core$/,
+							find: /^segment-state\/core$/,
 							replacement: resolve(import.meta.dirname, 'src/core/index.ts'),
 						},
 						{
-							find: /^@webeferen\/segment\/octane$/,
+							find: /^segment-state\/octane$/,
 							replacement: resolve(import.meta.dirname, 'src/octane/index.ts'),
 						},
 					],

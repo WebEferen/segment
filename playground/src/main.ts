@@ -1,4 +1,4 @@
-import { cell, createStore, segment } from '@webeferen/segment';
+import { cell, createStore, segment } from 'segment-state';
 import './style.css';
 
 type Filter = 'all' | 'open' | 'done';
@@ -43,7 +43,7 @@ function render(): void {
 		<section class="shell">
 			<header>
 				<div>
-					<p class="eyebrow">@webeferen/segment</p>
+					<p class="eyebrow">segment-state</p>
 					<h1>State you can address.</h1>
 					<p class="intro">A framework-agnostic playground powered by structural paths and targeted subscriptions.</p>
 				</div>

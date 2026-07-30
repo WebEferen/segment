@@ -55,7 +55,7 @@ importers:
 
   playground:
     dependencies:
-      "@webeferen/segment":
+      segment-state:
         specifier: workspace:*
         version: link:..
     devDependencies:

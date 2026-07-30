@@ -68,7 +68,7 @@ import type {
 } from './types.js';
 
 function fail(message: string): never {
-	throw new Error(`[@webeferen/segment] ${message}`);
+	throw new Error(`[segment-state] ${message}`);
 }
 
 // ── Refs ────────────────────────────────────────────────────────────────────
@@ -120,7 +120,7 @@ interface RefInternals {
  * an `instanceof` contract would silently report every ref as ownerless. A
  * `Symbol.for` key is shared across every copy, so the contract survives.
  */
-const REF_INTERNALS = /* @__PURE__ */ Symbol.for('@webeferen/segment.ref');
+const REF_INTERNALS = /* @__PURE__ */ Symbol.for('segment-state.ref');
 
 /** Placeholder for a reused staged record between transactions. */
 const EMPTY_SEGMENTS: readonly string[] = [];
@@ -1135,7 +1135,7 @@ export function createStore<S>(shape: S): Store<S> {
 	function reportError(error: unknown, owner: PortRecord | null): void {
 		const where = owner === null ? 'a commit subscriber' : `port "${owner.port.name}"`;
 		// eslint-disable-next-line no-console
-		console.error(`[@webeferen/segment] ${where} threw and was isolated:`, error);
+		console.error(`[segment-state] ${where} threw and was isolated:`, error);
 	}
 
 	function indexOfSlash(path: string): number {

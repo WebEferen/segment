@@ -1,4 +1,4 @@
-// @webeferen/segment/octane — the optional Octane binding.
+// segment-state/octane — the optional Octane binding.
 //
 // Three hooks, and only the first is needed to read anything:
 //
@@ -59,7 +59,7 @@ function ownerOf(ref: { readonly path: string }): Store<unknown> {
 	const store = storeOf(ref) as Store<unknown> | null;
 	if (store === null) {
 		throw new Error(
-			'[@webeferen/segment] this ref has no owning store. Build refs from ' +
+			'[segment-state] this ref has no owning store. Build refs from ' +
 				'`store.state` or `store.ref(path)` rather than by hand.',
 		);
 	}
@@ -82,7 +82,7 @@ interface Binding {
  */
 const NOT_WRITABLE = () => {
 	throw new Error(
-		'[@webeferen/segment] this value cannot be written. You can write anything you ' +
+		'[segment-state] this value cannot be written. You can write anything you ' +
 			'declared as a plain value; the store computes derived() and fetches ' +
 			'resource(), and an object in your shape just groups other values.',
 	);
@@ -99,13 +99,13 @@ function bindingFor(ref: AnyRef, store: Store<unknown>, slot: symbol | undefined
 			const kind = store.kindOf(ref);
 			if (kind === 'action') {
 				throw new Error(
-					`[@webeferen/segment] "${ref.path}" is something you call, not something you ` +
+					`[segment-state] "${ref.path}" is something you call, not something you ` +
 						'read. Call it directly: `s.cart.add("sku")`.',
 				);
 			}
 			if (kind === 'resource') {
 				throw new Error(
-					`[@webeferen/segment] "${ref.path}" is fetched, so reading it means waiting. ` +
+					`[segment-state] "${ref.path}" is fetched, so reading it means waiting. ` +
 						'Use useResource() to wait for the value, or useStatus() to draw the ' +
 						'loading and error states yourself.',
 				);
@@ -395,7 +395,7 @@ export function useDraft<T>(...args: unknown[]): [T, (next: T) => void, () => vo
 }
 
 // The agnostic core is re-exported so an application needs one import, and so a
-// worker or a server route can pull the same names from `@webeferen/segment`
+// worker or a server route can pull the same names from `segment-state`
 // without the renderer coming with them.
 export { action, cell, createStore, derived, list, resource, segment } from '../core/index.js';
 export type {

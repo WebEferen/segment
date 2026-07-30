@@ -1,13 +1,13 @@
 <p align="center">
-	<img src="./assets/lockup.svg" alt="Segment" width="380" />
+	<img src="./assets/segment-state-logo.png" alt="Segment logo" width="240" />
 </p>
 
 <p align="center">Framework-agnostic state, addressed by path.</p>
 
-# @webeferen/segment
+# segment-state
 
 ```ts
-import { createStore } from '@webeferen/segment';
+import { createStore } from 'segment-state';
 
 export const store = createStore({ theme: 'light', count: 0 });
 export const s = store.state;
@@ -19,19 +19,25 @@ store.update(s.count, (count) => count + 1);
 That is the whole core setup. A plain value is a piece of state, every value has a
 structural address, and subscriptions wake only for the address that changed.
 
-The default export and the compatibility `@webeferen/segment/core` entry point import
+The default export and the compatibility `segment-state/core` entry point import
 neither a UI framework nor the DOM, so they run in a browser, Node.js, and a worker.
-The optional Octane hooks live at `@webeferen/segment/octane`.
+The optional Octane hooks live at `segment-state/octane`.
 
 > **Status: experimental.** APIs still move.
 
+## Install
+
+```sh
+npm install segment-state
+```
+
 ## Package entry points
 
-| Import                      | Purpose                                 |
-| --------------------------- | --------------------------------------- |
-| `@webeferen/segment`        | Framework-agnostic state engine         |
-| `@webeferen/segment/core`   | Compatibility alias for the same engine |
-| `@webeferen/segment/octane` | Optional Octane hooks                   |
+| Import                 | Purpose                                 |
+| ---------------------- | --------------------------------------- |
+| `segment-state`        | Framework-agnostic state engine         |
+| `segment-state/core`   | Compatibility alias for the same engine |
+| `segment-state/octane` | Optional Octane hooks                   |
 
 Run the included interactive example with `pnpm playground`, or create a production
 build with `pnpm playground:build`.
@@ -57,16 +63,7 @@ A raw value declares state and supplies its initial value. You only reach for a
 marker where a value cannot carry the information.
 
 ```ts
-import {
-	createStore,
-	action,
-	cell,
-	derived,
-	list,
-	resource,
-	segment,
-	task,
-} from '@webeferen/segment';
+import { createStore, action, cell, derived, list, resource, segment, task } from 'segment-state';
 
 type UserId = string & { readonly __brand: 'UserId' };
 
@@ -134,7 +131,7 @@ The optional adapter keeps the core independent from Octane while adding render-
 subscriptions, Suspense integration, and drafts.
 
 ```tsx
-import { useDraft, useStatus, useValue } from '@webeferen/segment/octane';
+import { useDraft, useStatus, useValue } from 'segment-state/octane';
 
 const [theme, setTheme] = useValue(s.theme); //         read and write
 const [total] = useValue(s.cart.total); //               derived: the setter is `never`

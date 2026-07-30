@@ -1,4 +1,4 @@
-import { action, createStore, derived, resource, segment } from '@webeferen/segment';
+import { action, createStore, derived, resource, segment } from 'segment-state';
 
 export interface Gate {
 	resolve: (value: string) => void;

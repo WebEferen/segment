@@ -1,5 +1,5 @@
 {
-  "name": "@webeferen/segment-playground",
+  "name": "segment-state-playground",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@webeferen/segment": "workspace:*"
+    "segment-state": "workspace:*"
   },
   "devDependencies": {
     "typescript": "5.9.3",
