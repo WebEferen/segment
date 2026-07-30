@@ -179,6 +179,48 @@ counter.state.increment(2);
 console.log(counter.get(counter.state.doubled)); // 4
 ```
 
+### `.with()` is optional
+
+If you prefer an explicit module API, keep the schema data-only and export ordinary
+functions. Use the equivalent store-level composition methods for behavior that
+still needs a reactive address:
+
+```ts
+import { createStore } from 'segment-state';
+
+interface User {
+	name: string;
+}
+
+export const app = createStore({ count: 0, updatedAt: 0 });
+export const s = app.state;
+
+export function increment(by = 1): void {
+	app.update(s.count, (count) => count + by, 'counter/increment');
+}
+
+export function reset(): void {
+	app.act((tx) => {
+		tx.set(s.count, 0);
+		tx.set(s.updatedAt, Date.now());
+	}, 'counter/reset');
+}
+
+export const doubled = app.derive((get) => get(s.count) * 2);
+
+export const loadUser = app.resourceOf<User, [id: string]>(async ({ args: [id], signal }) => {
+	const response = await fetch(`/api/users/${id}`, { signal });
+	return (await response.json()) as User;
+});
+```
+
+Both styles use the same store and commit protocol. Choose `.with()` when behavior
+should be discoverable on `store.state`, needs a stable schema address, or a `task()`
+should expose automatic `status`, `result`, and `error` refs. Choose exported
+functions for a smaller, conventional module API. A multi-write function should use
+`store.act()` to remain atomic; a standalone resource created with `resourceOf()`
+has a session-local address.
+
 See the [state model guide](https://webeferen.github.io/segment/guide/state-model) for
 collections, refs, derivations, actions, and tasks. Resources, SSR, ports, and
 persistence boundaries live in the

@@ -144,13 +144,16 @@ Arguments must be primitives because they are encoded into the structural path. 
 a value is a filter rather than part of identity, model it as state and read it from
 the loader instead; changing that state will mark the resource stale.
 
-### Standalone composition
+### Composition without `.with()`
 
-Not every behavior needs a named schema slot. Plain stores can export ordinary
-functions, anonymous derivations, and standalone resources:
+Not every behavior needs a named schema slot. `.with()` can be replaced by a
+data-only schema plus ordinary exported functions, anonymous derivations, and
+standalone resources:
 
 ```ts
-const store = createStore({ query: '' });
+import { createStore } from 'segment-state';
+
+const store = createStore({ query: '', page: 1, updatedAt: 0 });
 const s = store.state;
 
 export const queryLength = store.derive((get) => get(s.query).length);
@@ -165,11 +168,37 @@ export const search = store.resourceOf<Result[], [query: string]>(
 export function setQuery(query: string): void {
 	store.set(s.query, query, 'query/set');
 }
+
+export function startNewSearch(query: string): void {
+	store.act((tx) => {
+		tx.set(s.query, query);
+		tx.set(s.page, 1);
+		tx.set(s.updatedAt, Date.now());
+	}, 'search/start');
+}
+
+export async function publish(query: string): Promise<void> {
+	const response = await fetch('/api/searches', {
+		method: 'POST',
+		body: JSON.stringify({ query }),
+	});
+
+	if (!response.ok) throw new Error(`HTTP ${response.status}`);
+}
 ```
 
-Standalone resource addresses are numbered by creation order. Use them within a
-session; use a declared resource when the address must be stable across persistence
-or server rendering.
+Single calls to `set()` or `update()` already produce one commit. Use `act()` when a
+function performs several writes that must be observed together. An ordinary async
+function can return its natural result, but its lifecycle is yours to model; unlike
+a declared `task()`, it has no automatic `status`, `result`, or `error` addresses.
+
+Standalone derivations should be created once, not during a render, and released
+with `store.release()` when their owning scope ends. Standalone resource addresses
+are numbered by creation order. Use them within a session; use a declared resource
+when the address must be stable across persistence or server rendering.
+
+The two styles can coexist. A store may keep domain actions and persistent resources
+in `.with()` while exporting small application-specific helpers as normal functions.
 
 ## Octane integration
 

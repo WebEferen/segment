@@ -109,6 +109,53 @@ const store = createStore({
 Forgetting one declared implementation is a type error. A store containing only
 plain data does not call `.with()`.
 
+## `.with()` or exported functions?
+
+`.with()` is an organizational choice, not a requirement for changing state. A
+data-only store can expose ordinary module functions instead:
+
+```ts
+import { createStore } from 'segment-state';
+
+const store = createStore({ count: 0, updatedAt: 0 });
+const s = store.state;
+
+export function increment(by = 1): void {
+	store.update(s.count, (count) => count + by, 'counter/increment');
+}
+
+export function reset(): void {
+	store.act((tx) => {
+		tx.set(s.count, 0);
+		tx.set(s.updatedAt, Date.now());
+	}, 'counter/reset');
+}
+
+export const doubled = store.derive((get) => get(s.count) * 2);
+```
+
+Do not leave an `action()`, `derived()`, `resource()`, or `task()` marker in the
+schema without `.with()`; those markers deliberately require implementations.
+Instead, move that behavior outside the schema and use the corresponding store API.
+
+| Schema with `.with()`                 | Exported module API                               |
+| ------------------------------------- | ------------------------------------------------- |
+| `action()` implemented in `.with()`   | Ordinary function using `set`, `update`, or `act` |
+| `derived()` implemented in `.with()`  | `store.derive()` created once                     |
+| `resource()` implemented in `.with()` | `store.resourceOf()`                              |
+| `task()` implemented in `.with()`     | Ordinary async function with explicit state       |
+
+Use `.with()` when behavior belongs on the typed accessor tree, needs a stable
+schema address, or benefits from exhaustive implementation checking. Export
+functions when the module itself is the public API and direct composition is
+simpler.
+
+An ordinary async function does not receive the automatic `status`, `result`, and
+`error` refs of `task()`. Standalone `resourceOf()` addresses are numbered by
+creation order and should be treated as session-local. The
+[advanced composition section](../advanced.md#composition-without-with) shows the
+complete pattern.
+
 ## Derived values
 
 A derivation receives `get` and records the addresses it actually reads. Its value is

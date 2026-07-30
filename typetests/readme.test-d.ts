@@ -27,6 +27,34 @@ const stop = quick.observe(completed, () => void quick.get(completed));
 quick.update(completed, (value) => !value, 'todo/toggle');
 stop();
 
+// ── "`.with()` is optional" ────────────────────────────────────────────────
+
+interface StandaloneUser {
+	name: string;
+}
+
+const composed = createStore({ count: 0, updatedAt: 0 });
+const cs = composed.state;
+
+export function incrementStandalone(by = 1): void {
+	composed.update(cs.count, (count) => count + by, 'counter/increment');
+}
+
+export function resetStandalone(): void {
+	composed.act((tx) => {
+		tx.set(cs.count, 0);
+		tx.set(cs.updatedAt, Date.now());
+	}, 'counter/reset');
+}
+
+export const standaloneDoubled = composed.derive((get) => get(cs.count) * 2);
+export const loadStandaloneUser = composed.resourceOf<StandaloneUser, [id: string]>(
+	async ({ args: [id], signal }) => {
+		const response = await fetch(`/api/users/${id}`, { signal });
+		return (await response.json()) as StandaloneUser;
+	},
+);
+
 // ── "Declaring a store" ─────────────────────────────────────────────────────
 
 type UserId = string & { readonly __brand: 'UserId' };
