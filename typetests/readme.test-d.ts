@@ -10,6 +10,7 @@ import {
 	resource,
 	segment,
 	task,
+	type Payload,
 } from '../src/core/index.js';
 
 type Equal<X, Y> =
@@ -126,12 +127,38 @@ export const standaloneRef = standalone('ada');
 
 // ── "Server rendering" ─────────────────────────────────────────────────────
 
-const payload = store.dehydrate({ at: 1 });
-const shell = store.dehydrate({ include: ['ui/**'] });
-store.hydrate(payload);
-store.hydrate(payload, { maxAge: 60_000 });
-const applied = store.hydrate(shell, { allow: ['cart/**'], source: 'rpc:reprice' });
-export const rejected: readonly string[] = applied.rejected;
+interface SsrViewer {
+	id: string;
+	name: string;
+}
+
+export function createSsrStore() {
+	return createStore({
+		page: {
+			title: '',
+			viewer: cell<SsrViewer | null>(null),
+		},
+		ui: { theme: cell<'light' | 'dark'>('light') },
+	});
+}
+
+declare const viewer: SsrViewer;
+
+const serverStore = createSsrStore();
+serverStore.patch(serverStore.state.page, { title: 'Dashboard', viewer });
+
+const payload = serverStore.dehydrate({ at: 1 });
+export const payloadJson = JSON.stringify(payload).replaceAll('<', '\\u003c');
+
+const clientStore = createSsrStore();
+const parsedPayload = JSON.parse(payloadJson) as Payload;
+const hydrated = clientStore.hydrate(parsedPayload, { maxAge: 60_000 });
+
+export const appliedPaths: readonly string[] = hydrated.applied;
+
+const shell = serverStore.dehydrate({ include: ['ui/**'] });
+const scoped = clientStore.hydrate(shell, { allow: ['ui/**'], source: 'ssr:shell' });
+export const rejected: readonly string[] = scoped.rejected;
 
 // ── "Ports" ────────────────────────────────────────────────────────────────
 

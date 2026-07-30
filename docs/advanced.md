@@ -235,22 +235,140 @@ would be shared across concurrent requests.
 
 ## Server rendering and hydration
 
-`dehydrate()` produces a versioned, flat path-to-value payload. Derivations, actions,
-and task run state are omitted because the client recomputes or re-creates them.
+Segment does not move a live store from Node to the browser. The server and client
+create separate stores from the same model, while `dehydrate()` and `hydrate()` move
+only a versioned snapshot of addressable data between them:
 
-```ts
-const full = store.dehydrate({ at: Date.now() });
-const shell = store.dehydrate({ include: ['ui/**'] });
-
-store.hydrate(full);
-store.hydrate(full, { maxAge: 60_000 });
+```text
+request → fresh server store → render + dehydrate → HTML/JSON
+                                                     ↓
+first client render ← hydrate ← fresh client store ← payload
 ```
 
-A hydrated resource is immediately ready and does not repeat the server's request.
-When a stamped payload is older than `maxAge`, its value is adopted for first paint
-but marked stale so it can refresh.
+Hydration must finish before the client renderer mounts. That makes the first
+browser read match the state that produced the server HTML and avoids a flash of
+schema defaults or a hydration mismatch.
 
-Scope any payload received from an external endpoint:
+### 1. Share the model, not a store instance
+
+Put the model in a module that both runtimes can import, and export a factory. The
+factory also reinstalls derivations, actions, tasks, and resource implementations
+when the model uses them.
+
+```ts
+// app-state.ts
+import { cell, createStore } from 'segment-state';
+
+export interface Viewer {
+	id: string;
+	name: string;
+}
+
+export function createAppStore() {
+	return createStore({
+		page: {
+			title: '',
+			viewer: cell<Viewer | null>(null),
+		},
+		ui: { theme: cell<'light' | 'dark'>('light') },
+	});
+}
+
+export type AppStore = ReturnType<typeof createAppStore>;
+```
+
+Do not export one mutable `store` from this shared module for server use. Concurrent
+requests would read and overwrite each other's state. Create one instance per
+request and let it be collected when that request completes.
+
+### 2. Render and dehydrate on the server
+
+Populate the request's store, render with it, and stamp the payload. Escaping `<`
+prevents user-controlled JSON from closing the raw-text `<script>` element early.
+Use your framework's serializer instead when it provides an equivalent safe JSON
+transport, and apply the application's normal CSP nonce when required.
+
+```ts
+// server.ts
+import { createAppStore } from './app-state.js';
+
+export async function renderRequest(request: Request): Promise<string> {
+	const store = createAppStore(); // isolated to this request
+
+	store.patch(store.state.page, {
+		title: 'Dashboard',
+		viewer: await loadViewer(request),
+	});
+
+	const appHtml = await renderApp(store);
+	const payload = store.dehydrate({ at: Date.now() });
+	const payloadJson = JSON.stringify(payload).replaceAll('<', '\\u003c');
+
+	return `<!doctype html>
+		<div id="app">${appHtml}</div>
+		<script id="segment-state" type="application/json">${payloadJson}</script>
+		<script type="module" src="/client.js"></script>`;
+}
+```
+
+Call `dehydrate()` only after all state needed for the server render has settled.
+The payload is a flat `path → value` map with format version `v: 1`; `at` is
+included only when the producer supplies it.
+
+### 3. Hydrate before the first client render
+
+Create a browser-owned store from the same factory, parse the payload, and hydrate
+it before mounting the application:
+
+```ts
+// client.ts
+import type { Payload } from 'segment-state';
+import { createAppStore } from './app-state.js';
+
+const element = document.querySelector<HTMLScriptElement>('#segment-state');
+const root = document.querySelector('#app');
+if (!element?.textContent || !root) throw new Error('Incomplete SSR document');
+
+const payload = JSON.parse(element.textContent) as Payload;
+const store = createAppStore();
+const result = store.hydrate(payload, { maxAge: 60_000 });
+
+mountApp(store, root);
+console.log(result.unknown); // paths absent from the current client model
+```
+
+`hydrate()` validates the payload version and applies known writable paths as one
+atomic commit. Unknown paths are skipped and reported, which allows a controlled
+schema rollout; an unsupported payload version throws instead of guessing.
+
+### What crosses the boundary?
+
+| State                                       | Serialized? | Client behavior                                            |
+| ------------------------------------------- | ----------- | ---------------------------------------------------------- |
+| Cells, branches, lists, and segment data    | Yes         | Adopted in one hydration commit.                           |
+| Settled resource values                     | Yes         | Immediately ready; the initial request is not repeated.    |
+| Derived values                              | No          | Recomputed from hydrated dependencies.                     |
+| Actions and task run state                  | No          | Re-created by the shared store factory.                    |
+| Observers, promises, and cancellation state | No          | Runtime-local and created only when the client needs them. |
+
+When a stamped payload is older than `maxAge`, its resource value is still adopted
+for first paint but marked stale so it can refresh behind that value. Without `at`
+or `maxAge`, hydration does not infer an age.
+
+### Partial and untrusted payloads
+
+`include` and `exclude` make it possible to send a shell first and merge another
+slice later. Every `hydrate()` call remains its own atomic commit:
+
+```ts
+const shell = serverStore.dehydrate({ include: ['ui/**'] });
+const page = serverStore.dehydrate({ include: ['page/**'], at: Date.now() });
+
+clientStore.hydrate(shell);
+clientStore.hydrate(page, { maxAge: 60_000 });
+```
+
+Scope any payload received from an external endpoint or persistent storage:
 
 ```ts
 const result = store.hydrate(responsePayload, {
@@ -261,8 +379,11 @@ const result = store.hydrate(responsePayload, {
 console.log(result.applied, result.rejected, result.unknown);
 ```
 
-Without `allow`, the payload may write any address represented in the store. Treat
-the allow-list as the authority boundary for RPC responses and persisted data.
+Without `allow`, the payload may write any writable address represented in the
+store. Treat the allow-list as the authority boundary for RPC responses and
+persisted data. The server-rendered payload in your own HTML is normally controlled
+by the application; endpoints that accept or return state fragments should still
+receive the narrowest practical `allow` list.
 
 ## Ports and commit streams
 

@@ -244,6 +244,81 @@ The core API is deliberately small:
 This makes the same store usable from UI code, tests, workers, sockets, persistence
 layers, and developer tools.
 
+## Server rendering: server → client
+
+Segment uses the same store model on the server and in the browser. Each server
+request creates an isolated store, renders from it, and sends only a versioned data
+payload to the client. The browser creates its own store and hydrates that payload
+**before** the first client render.
+
+```ts
+// app-state.ts — imported by both server and client
+import { cell, createStore } from 'segment-state';
+
+export interface Viewer {
+	id: string;
+	name: string;
+}
+
+export function createAppStore() {
+	return createStore({
+		page: {
+			title: '',
+			viewer: cell<Viewer | null>(null),
+		},
+		ui: { theme: cell<'light' | 'dark'>('light') },
+	});
+}
+```
+
+On the server, create a fresh instance for every request and embed a safely escaped
+payload next to the rendered application:
+
+```ts
+const store = createAppStore();
+
+store.patch(store.state.page, {
+	title: 'Dashboard',
+	viewer: await loadViewer(request),
+});
+
+const appHtml = await renderApp(store);
+const payload = store.dehydrate({ at: Date.now() });
+const payloadJson = JSON.stringify(payload).replaceAll('<', '\\u003c');
+
+return `
+	<div id="app">${appHtml}</div>
+	<script id="segment-state" type="application/json">${payloadJson}</script>
+	<script type="module" src="/client.js"></script>
+`;
+```
+
+In the browser, hydrate before mounting so the first client render sees exactly the
+state used for the server HTML:
+
+```ts
+import type { Payload } from 'segment-state';
+
+const element = document.querySelector<HTMLScriptElement>('#segment-state');
+const root = document.querySelector('#app');
+if (!element?.textContent || !root) throw new Error('Incomplete SSR document');
+
+const payload = JSON.parse(element.textContent) as Payload;
+const store = createAppStore();
+
+store.hydrate(payload, { maxAge: 60_000 });
+mountApp(store, root);
+```
+
+`hydrate()` publishes one atomic commit. Derived values and actions are recreated
+from code, not serialized. A resource resolved on the server arrives ready on the
+client and does not repeat its initial request; an older stamped value can still be
+used for first paint and refreshed in the background through `maxAge`.
+
+Never share a mutable module-level store between server requests. See the
+[complete SSR and hydration guide](https://webeferen.github.io/segment/advanced#server-rendering-and-hydration)
+for partial payloads, resource behavior, and authority boundaries.
+
 ## Octane integration
 
 `segment-state/octane` is the optional render-aware adapter. It has no provider and

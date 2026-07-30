@@ -62,6 +62,12 @@ changes do not need a changeset.
 
 Use `pnpm changeset:status` to inspect the pending release locally.
 
+CI also validates release intent on pull requests. Changes under `src`, changes to
+published package metadata, and build-output configuration must include a changeset.
+Documentation, examples, tests, benchmarks, and CI-only changes remain exempt. If a
+matched file changes without affecting the published package, record that deliberate
+exception with `pnpm changeset --empty`.
+
 ## Prepare the version
 
 When a changeset lands on `main`, `.github/workflows/version.yml` creates or updates
