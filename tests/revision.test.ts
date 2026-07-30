@@ -104,4 +104,26 @@ describe('revision', () => {
 		const { store } = makeStore();
 		expect(() => store.revision({ path: 'users/u1/nmae' })).toThrow(/no such path/);
 	});
+
+	it('moves for observed leaves and observed derivations when the partition is replaced', () => {
+		const { store, s } = makeStore();
+		const total = store.derive(
+			(get) => Object.keys(get(store.ref('users')) as Record<string, unknown>).length,
+		);
+		const offLeaf = store.observe(s.users.at(uid(1)).name, () => {});
+		const offTotal = store.observe(total, () => {});
+		const leafBefore = store.revision(s.users.at(uid(1)).name);
+		const totalBefore = store.revision(total);
+		s.users.replaceAll({
+			[uid(1)]: { name: 'Ada', age: 36 },
+			[uid(2)]: { name: 'Grace', age: 45 },
+		});
+		// The leaf's contents were replaced wholesale and the derivation's value
+		// changed; a stamp that stays put here is a missed real change.
+		expect(store.revision(s.users.at(uid(1)).name)).not.toBe(leafBefore);
+		expect(store.revision(total)).not.toBe(totalBefore);
+		offLeaf();
+		offTotal();
+		store.release(total);
+	});
 });

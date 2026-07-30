@@ -1,5 +1,5 @@
 import { Suspense } from 'octane';
-import { useValue } from '@octanejs/segment';
+import { useValue } from '@webeferen/segment/octane';
 import type { AppStore } from './store.js';
 
 /**

@@ -1,43 +1,94 @@
 {
-  "name": "@octanejs/segment",
+  "name": "@webeferen/segment",
   "version": "0.0.1",
-  "license": "MIT",
-  "type": "module",
-  "engines": {
-    "node": ">=22"
-  },
-  "description": "Path-addressed state for Octane. A framework-agnostic core whose memory is O(observed) rather than O(data), with transactional commits that roll back, and ports that let non-Octane services participate by path.",
+  "description": "Framework-agnostic, path-addressed state with O(observed) memory and transactional commits.",
   "author": {
     "name": "Dominic Gannaway",
     "email": "dg@domgan.com"
   },
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@11.15.1",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/WebEferen/segment.git"
+  },
+  "bugs": {
+    "url": "https://github.com/WebEferen/segment/issues"
+  },
+  "homepage": "https://github.com/WebEferen/segment#readme",
+  "main": "./dist/core/index.js",
+  "module": "./dist/core/index.js",
+  "types": "./dist/core/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/core/index.d.ts",
+      "import": "./dist/core/index.js",
+      "default": "./dist/core/index.js"
+    },
+    "./core": {
+      "types": "./dist/core/index.d.ts",
+      "import": "./dist/core/index.js",
+      "default": "./dist/core/index.js"
+    },
+    "./octane": {
+      "types": "./dist/octane/index.d.ts",
+      "import": "./dist/octane/index.js",
+      "default": "./dist/octane/index.js"
+    }
+  },
   "publishConfig": {
     "access": "public"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/octanejs/octane.git",
-    "directory": "packages/segment"
-  },
-  "main": "src/octane/index.ts",
-  "module": "src/octane/index.ts",
-  "types": "src/octane/index.ts",
-  "files": [
-    "src",
-    "README.md"
-  ],
-  "exports": {
-    ".": "./src/octane/index.ts",
-    "./core": "./src/core/index.ts"
-  },
   "scripts": {
-    "test": "vitest run"
-  },
-  "devDependencies": {
-    "octane": "workspace:*",
-    "vitest": "catalog:default"
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.core.json && tsc -p tsconfig.json && tsc -p typetests/tsconfig.json",
+    "test": "vitest run",
+    "test:core": "vitest run --project segment-core",
+    "test:octane": "vitest run --project segment-octane",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "playground": "pnpm build && pnpm --dir playground dev",
+    "playground:build": "pnpm build && pnpm --dir playground build",
+    "benchmark:build": "node benchmarks/segment-state/build.mjs",
+    "benchmark": "pnpm benchmark:build && node --expose-gc --import tsx benchmarks/segment-state/run.mjs",
+    "benchmark:hot": "pnpm benchmark:build && node benchmarks/segment-state/hot.mjs",
+    "pack:check": "npm pack --dry-run",
+    "check": "pnpm format:check && pnpm typecheck && pnpm test && pnpm build && pnpm playground:build",
+    "prepack": "pnpm build"
   },
   "peerDependencies": {
-    "octane": "workspace:*"
+    "octane": "^0.1.21"
+  },
+  "peerDependenciesMeta": {
+    "octane": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@tsrx/prettier-plugin": "0.3.118",
+    "@types/node": "24.13.3",
+    "esbuild": "0.28.1",
+    "jotai": "2.20.2",
+    "jsdom": "29.1.1",
+    "octane": "0.1.21",
+    "prettier": "3.9.6",
+    "redux": "5.0.1",
+    "terser": "5.49.0",
+    "tsx": "4.23.1",
+    "typescript": "5.9.3",
+    "valtio": "2.3.2",
+    "vite": "8.1.5",
+    "vitest": "4.1.10",
+    "zustand": "5.0.14"
   }
 }

@@ -1,4 +1,4 @@
-import { action, createStore, derived, resource, segment } from '@octanejs/segment';
+import { action, createStore, derived, resource, segment } from '@webeferen/segment';
 
 export interface Gate {
 	resolve: (value: string) => void;

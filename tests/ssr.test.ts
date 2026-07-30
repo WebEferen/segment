@@ -250,4 +250,20 @@ describe('hydrate: a payload from the wire', () => {
 		client.store.hydrate(response, { allow: ['cart/**'], source: 'rpc:repriceCart' });
 		expect(client.store.get(client.s.cart.items.at(0).qty)).toBe(9);
 	});
+
+	it('wakes an observed derivation whose inputs arrived by hydration', () => {
+		const server = makeStore();
+		server.store.act((tx) => tx.set(server.s.ui.count, 21));
+		const payload = server.store.dehydrate();
+
+		const client = makeStore();
+		const woken = vi.fn();
+		client.store.observe(client.s.calc.double, woken);
+		expect(client.store.get(client.s.calc.double)).toBe(0);
+		client.store.hydrate(payload);
+		// The derivation's readers subscribed to an address nothing writes
+		// directly, so the hydrate commit itself has to push it.
+		expect(woken).toHaveBeenCalledTimes(1);
+		expect(client.store.get(client.s.calc.double)).toBe(42);
+	});
 });

@@ -1,6 +1,7 @@
 # The Segment core
 
-`@octanejs/segment/core` is the whole state engine with no renderer attached. It
+`@webeferen/segment` (also available as `@webeferen/segment/core`) is the whole state
+engine with no renderer attached. It
 imports neither Octane nor the DOM, and that claim is machine-checked: the core has
 its own `tsconfig.core.json` with no `dom` lib, so a DOM reference that creeps in
 fails typecheck.
@@ -22,14 +23,14 @@ Nodes below it materialize only while something observes them.
 
 Measured at three sizes, 200 observed leaves throughout:
 
-| design | rows | live nodes | structure | overhead over the raw data |
-| --- | --- | --- | --- | --- |
-| node per field | 10,000 | 110,002 | 17.3 MB | 14.2 MB |
-| node per field | 100,000 | 1,100,002 | 171.4 MB | 138.0 MB |
-| node per field | 1,000,000 | 11,000,002 | **1706.6 MB** | 1383.9 MB |
-| Segment | 10,000 | 402 | 3.3 MB | 0.2 MB |
-| Segment | 100,000 | 402 | 33.7 MB | 0.2 MB |
-| Segment | 1,000,000 | **402** | **322.8 MB** | 0.2 MB |
+| design         | rows      | live nodes | structure     | overhead over the raw data |
+| -------------- | --------- | ---------- | ------------- | -------------------------- |
+| node per field | 10,000    | 110,002    | 17.3 MB       | 14.2 MB                    |
+| node per field | 100,000   | 1,100,002  | 171.4 MB      | 138.0 MB                   |
+| node per field | 1,000,000 | 11,000,002 | **1706.6 MB** | 1383.9 MB                  |
+| Segment        | 10,000    | 402        | 3.3 MB        | 0.2 MB                     |
+| Segment        | 100,000   | 402        | 33.7 MB       | 0.2 MB                     |
+| Segment        | 1,000,000 | **402**    | **322.8 MB**  | 0.2 MB                     |
 
 Rows times 100 gives nodes times 100 in one design and times 1.00 in the other.
 
@@ -43,10 +44,10 @@ Holding the observer set still hides the real problem. A scrolling list replaces
 observers by the hundred, and if materialization were one-way, "observed" would
 quietly mean "ever observed":
 
-| | live observers | distinct leaves touched | live nodes |
-| --- | --- | --- | --- |
-| without pruning | 200 | 20,200 | **40,402** |
-| with pruning | 200 | 200,200 | **402** |
+|                 | live observers | distinct leaves touched | live nodes |
+| --------------- | -------------- | ----------------------- | ---------- |
+| without pruning | 200            | 20,200                  | **40,402** |
+| with pruning    | 200            | 200,200                 | **402**    |
 
 Pruning on last-observer-detach is what keeps the property. And pruning is only
 sound because **writes go through to the bulk value**, so a materialized node is
@@ -88,6 +89,18 @@ quadratic into linear. Iteration order is still insertion order. The first obser
 held directly because an empty V8 Set costs about 128 bytes and almost every observed
 address has exactly one observer.
 
+### Flat leaf records
+
+A cell-shaped Segment does not materialize a full trie node for each observed key.
+Its pinned holder owns a `Map<string, LeafRec>`, and each compact record carries the
+key revision, optional interned view, and the first observer directly. Only a second
+observer allocates a Set. Removing the last observer deletes one map entry instead of
+walking and pruning a child node.
+
+This specialization preserves the same notification and `revision()` contract while
+removing fields a flat leaf can never use: children, derived cache, bulk value, schema,
+parent linkage, and deep-observer bookkeeping.
+
 `ver` is read back through `store.revision(ref)`. That is how a consumer reading a
 whole subtree decides staleness with **one integer compare** instead of diffing a
 value it never wanted to hold.
@@ -96,7 +109,8 @@ value it never wanted to hold.
 
 Nodes above every bulk holder are bounded by the schema, so they are materialized
 once at construction and pinned. Everything below a bulk holder is unbounded, so it
-materializes only on observation.
+materializes only on observation; flat cell leaves use the lighter records described
+above instead of nodes.
 
 That split has an observable consequence: a **schema-bounded derivation caches even
 with no observer** (its node is pinned, so there is somewhere to cache), while a
@@ -105,16 +119,16 @@ Materializing one per read is exactly the O(data) growth the design refuses.
 
 ### Complexity
 
-| operation | cost |
-| --- | --- |
-| read through a ref | O(depth), allocation-free |
-| write a leaf | O(depth) stamp plus O(woken) |
-| "did anything under here change" | **O(1)** |
-| replace a whole segment | O(1) at the node, descendants re-seeded lazily |
-| read a clean derivation | O(1) |
-| read a dirty derivation | O(deps) pull, recursive |
-| commit | O(writes x depth + woken) |
-| observers woken by a write | only those whose address actually moved |
+| operation                        | cost                                           |
+| -------------------------------- | ---------------------------------------------- |
+| read through a ref               | O(depth), allocation-free                      |
+| write a leaf                     | O(depth) stamp plus O(woken)                   |
+| "did anything under here change" | **O(1)**                                       |
+| replace a whole segment          | O(1) at the node, descendants re-seeded lazily |
+| read a clean derivation          | O(1)                                           |
+| read a dirty derivation          | O(deps) pull, recursive                        |
+| commit                           | O(writes x depth + woken)                      |
+| observers woken by a write       | only those whose address actually moved        |
 
 The baseline this improves on: any store built on `useSyncExternalStore` pays
 O(all subscribers x selector) per write, because every subscriber re-runs its
@@ -126,24 +140,24 @@ selector to find out whether it cared.
 
 `benchmarks/segment-state/hot.mjs`, best of 5 over 200,000 operations, one process
 per case. The multiplier is against one `Map.get` over the same 20,000 keys, which
-came out at 9.6 ns here; read the multiplier rather than the nanoseconds, because
+came out at 11.7 ns here; read the multiplier rather than the nanoseconds, because
 absolute time moves 2-3x with machine load while the multiplier holds.
 
-| operation | ns | x Map.get |
-| --- | --- | --- |
-| read a cell through a held ref | 11.6 | 1.2x |
-| read a segment leaf through a held ref | 11.6 | 1.3x |
-| read a clean derivation | 12.9 | 1.3x |
-| read `.at(key)` on an observed key | 25.0 | 2.5x |
-| read `.at(key).field` on an observed key | 41.5 | 4.6x |
-| read `.at(key)`, key not observed | 49.8 | 5.0x |
-| write a cell, nobody observing | 36.2 | 3.7x |
-| write a cell, one observer | 36.4 | 3.9x |
-| write a cell, a commit subscriber attached | 62.2 | 6.4x |
-| write a segment leaf through a held ref | 50.2 | 5.5x |
-| write `.at(key)` on an observed key | 87.8 | 9.4x |
-| write one cell inside `act()` | 57.7 | 5.9x |
-| write three cells in one `act()` | 126.5 | 13.9x |
+| operation                                  | ns    | x Map.get |
+| ------------------------------------------ | ----- | --------- |
+| read a cell through a held ref             | 13.2  | 1.1x      |
+| read a segment leaf through a held ref     | 11.5  | 1.1x      |
+| read a clean derivation                    | 17.1  | 1.5x      |
+| read `.at(key)` on an observed key         | 28.0  | 2.4x      |
+| read `.at(key).field` on an observed key   | 42.5  | 3.6x      |
+| read `.at(key)`, key not observed          | 45.9  | 3.9x      |
+| write a cell, nobody observing             | 40.4  | 3.5x      |
+| write a cell, one observer                 | 40.7  | 3.3x      |
+| write a cell, a commit subscriber attached | 59.4  | 5.3x      |
+| write a segment leaf through a held ref    | 44.5  | 3.9x      |
+| write `.at(key)` on an observed key        | 71.0  | 5.8x      |
+| write one cell inside `act()`              | 68.5  | 6.0x      |
+| write three cells in one `act()`           | 131.1 | 11.2x     |
 
 Five properties are worth stating, because each is a decision rather than a happy
 accident:
@@ -162,10 +176,10 @@ accident:
 - **A one-write commit needs no dedup Set**, because an observer is registered at
   exactly one node and each node on the wake walk is visited once, so a duplicate is
   unrepresentable. An ordinary action is therefore as cheap as a direct `set`.
-- **`.at(key)` interns its descriptor on the trie node** while the address is
-  observed, so a mounted component re-reading its own address does not rebuild it.
-  Pruning drops it with the node, so memory stays O(observed). Ref identity is
-  unspecified by contract precisely so this is allowed.
+- **`.at(key)` interns its descriptor on the materialized address** while it is
+  observed: a flat leaf record for a cell-shaped Segment, or a trie node for a
+  structured record. Detach drops either representation, so memory stays O(observed).
+  Ref identity is unspecified by contract precisely so this is allowed.
 
 ### Why a group under a segment builds its fields lazily
 
@@ -173,12 +187,12 @@ A group's accessor view used to build a ref for every field. That made reading O
 field cost as much as the record is wide:
 
 | fields in the record | ns to read one field |
-| --- | --- |
-| 1 | 218 |
-| 2 | 271 |
-| 4 | 368 |
-| 8 | 521 |
-| 16 | **1112** |
+| -------------------- | -------------------- |
+| 1                    | 218                  |
+| 2                    | 271                  |
+| 4                    | 368                  |
+| 8                    | 521                  |
+| 16                   | **1112**             |
 
 A caller that wants `user.name` should not pay for `user.email`. A group under a bulk
 holder is built once per KEY, so its view is now one allocation over a prototype
@@ -191,15 +205,14 @@ prototype measured 16% slower in `createStore` for a 400-leaf schema.
 
 ### What a mounted row costs
 
-One observed address holds a trie node, an entry in its parent's child map, an
-observer, a disposer, and the interned descriptor: **415 bytes**, and a
-mount-and-unmount cycle costs 213 ns per row. Three decisions got it there from 855
-bytes and 321 ns:
+In the flat 20,000-row comparison workload, one mounted row adds **308 bytes**, and a
+warm mount-and-unmount cycle for 200 rows costs 0.0155 ms, about 78 ns per row. Four
+decisions keep that path small:
 
-- **The first observer is held directly on the node.** An empty V8 Set costs about 128
-  bytes and almost every observed address has exactly one observer, so the Set is
-  allocated only when a second one arrives, and a node that drops back to one
-  observer releases it again.
+- **A flat leaf record doubles as its first observer.** It does not allocate a
+  separate observer object, a child trie node, or a parent-map entry.
+- **Overflow observers live in a Set only when needed.** An empty V8 Set costs about
+  128 bytes, so the common one-observer address pays for none.
 - **The disposer closes over one variable.** The node lives on the observer, and
   `live` doubles as the already-disposed flag, so V8 allocates no context object for
   the closure and every subscription's disposer is the same compiled function.
@@ -241,11 +254,11 @@ log; persistence and replication want the paths, not the name.
 
 Three ways to get one, in order of what they cost:
 
-| | how | cost | works in production |
-| --- | --- | --- | --- |
-| declared `action()` / `task()` | its schema path is the source | none | **yes**, and it survives minification |
-| explicit string | `store.set(ref, v, 'mySource')` | none | yes |
-| automatic | the calling function's name | a stack capture | **no**, reports `'action'` |
+|                                | how                             | cost            | works in production                   |
+| ------------------------------ | ------------------------------- | --------------- | ------------------------------------- |
+| declared `action()` / `task()` | its schema path is the source   | none            | **yes**, and it survives minification |
+| explicit string                | `store.set(ref, v, 'mySource')` | none            | yes                                   |
+| automatic                      | the calling function's name     | a stack capture | **no**, reports `'action'`            |
 
 The automatic form is guarded twice: development only, and only while something is
 subscribed to commits or watching a pattern. Capturing a stack is one of the most
@@ -382,15 +395,15 @@ commit throws in the same place.
 
 ## 7. Deliberate design decisions, and what they cost
 
-| Decision | Why | What it costs |
-| --- | --- | --- |
-| write-through, not copy-on-write | pruning is only sound this way | no structural sharing, no free immutable snapshots |
-| implementations in `.with()` | a callback inside the shape literal collapses `S` to `never` | the definition is two calls instead of one |
-| arguments as path segments | the cache is the address | arguments must be primitives |
-| ref identity not interned through a dynamic segment | interning an unbounded key space is the `atomFamily` leak | compare `ref.path`, never `===` |
-| a group read returns the record as stored | synthesizing defaults would allocate per read and still not fill a partial record | a group read can be `undefined` |
-| reserved keys (`path`, `at`, `replaceAll`, `snapshot`) | the accessor tree occupies them on every node | those four names are unavailable in a shape |
-| a bare function in a shape is rejected | it would become a cell holding a function and vanish from a payload | `cell(fn)` is required to mean it |
+| Decision                                               | Why                                                                               | What it costs                                      |
+| ------------------------------------------------------ | --------------------------------------------------------------------------------- | -------------------------------------------------- |
+| write-through, not copy-on-write                       | pruning is only sound this way                                                    | no structural sharing, no free immutable snapshots |
+| implementations in `.with()`                           | a callback inside the shape literal collapses `S` to `never`                      | the definition is two calls instead of one         |
+| arguments as path segments                             | the cache is the address                                                          | arguments must be primitives                       |
+| ref identity not interned through a dynamic segment    | interning an unbounded key space is the `atomFamily` leak                         | compare `ref.path`, never `===`                    |
+| a group read returns the record as stored              | synthesizing defaults would allocate per read and still not fill a partial record | a group read can be `undefined`                    |
+| reserved keys (`path`, `at`, `replaceAll`, `snapshot`) | the accessor tree occupies them on every node                                     | those four names are unavailable in a shape        |
+| a bare function in a shape is rejected                 | it would become a cell holding a function and vanish from a payload               | `cell(fn)` is required to mean it                  |
 
 ## 8. Errors are loud on purpose
 

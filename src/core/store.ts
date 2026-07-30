@@ -19,12 +19,15 @@ import {
 	type SchemaNode,
 } from './schema.js';
 import {
+	addLeafObserver,
 	addObserver,
 	bumpToRoot,
 	childOf,
 	collectDeep,
+	collectLeaf,
 	collectObservers,
 	soleDeep,
+	soleLeaf,
 	soleObserver,
 	collectSubtree,
 	countNodes,
@@ -32,6 +35,7 @@ import {
 	hasObservers,
 	lookupChild,
 	pruneUp,
+	removeLeafObserver,
 	removeObserver,
 	type DerivedCache,
 	type Node,
@@ -64,7 +68,7 @@ import type {
 } from './types.js';
 
 function fail(message: string): never {
-	throw new Error(`[@octanejs/segment] ${message}`);
+	throw new Error(`[@webeferen/segment] ${message}`);
 }
 
 // ── Refs ────────────────────────────────────────────────────────────────────
@@ -116,7 +120,7 @@ interface RefInternals {
  * an `instanceof` contract would silently report every ref as ownerless. A
  * `Symbol.for` key is shared across every copy, so the contract survives.
  */
-const REF_INTERNALS = /* @__PURE__ */ Symbol.for('@octanejs/segment.ref');
+const REF_INTERNALS = /* @__PURE__ */ Symbol.for('@webeferen/segment.ref');
 
 /** Placeholder for a reused staged record between transactions. */
 const EMPTY_SEGMENTS: readonly string[] = [];
@@ -390,8 +394,10 @@ function callerName(fallback: string): string {
 	const lines = stack.split('\n');
 	for (let i = 1; i < lines.length; i++) {
 		const line = lines[i];
-		// Skip our own frames: the first one outside this module is the caller.
-		if (line.includes('segment/src/core/') || line.includes('segment\\src\\core\\')) continue;
+		// Skip our own frames by package-relative layout rather than repository name.
+		// The old `segment/src/core` check leaked the Octane monorepo path into the
+		// runtime and started reporting `callerName` after the package was extracted.
+		if (/[/\\](?:src|dist)[/\\]core[/\\]/.test(line)) continue;
 		const match = /at (?:async )?([\w$.]+)/.exec(line);
 		const name = match?.[1];
 		if (name === undefined || name === 'Object' || name === 'Module') return fallback;
@@ -436,8 +442,24 @@ function warmup(): void {
 		const other = rows.observe('b', noop);
 		store.get(rows.at('a'));
 		store.get(rows.at('b'));
-		store.set(rows.at('c'), String(i));
+		// Three write shapes, chosen so the FIRST real interaction of an app is
+		// warm too, not only the first mount: an unobserved write (the silent
+		// fast path), an observed one (soleObserver, notifyOne, and the callback
+		// dispatch), and both transaction commits (commitOne, and the spilled
+		// multi-write commit with its dedup set and multi-observer notify).
+		store.set(rows.at('c'), `${i}c`);
 		store.update(rows.at('c'), (prev) => prev + 'y');
+		// These three call sites only need enough executions to compile their
+		// bytecode and seed their inline caches. Repeating them for all twelve
+		// subscription cycles added startup work without improving first use.
+		if (i < 2) {
+			store.set(rows.at('b'), `${i}b`);
+			store.act((tx) => tx.set(rows.at('c'), `${i}one`));
+			store.act((tx) => {
+				tx.set(rows.at('c'), `${i}two`);
+				tx.set(rows.at('a'), `${i}a`);
+			});
+		}
 		one();
 		two();
 		other();
@@ -461,6 +483,13 @@ export function createStore<S>(shape: S): Store<S> {
 	const observedDerived = new Set<Node>();
 	const commitSubs = new Set<(commit: Commit) => void>();
 	const watches = new Set<WatchEntry>();
+	/**
+	 * A store with no deep observers can return an address's sole listener
+	 * directly instead of walking every ancestor on every write. Flat leaves do
+	 * not contribute: they are cells, so even `{ deep: true }` has no descendant
+	 * address to reach.
+	 */
+	let deepObserverCount = 0;
 	/**
 	 * Watch patterns bucketed by their first LITERAL segment, plus one bucket for
 	 * patterns that start with a wildcard and therefore always apply. Without this,
@@ -631,11 +660,24 @@ export function createStore<S>(shape: S): Store<S> {
 		evaluating.add(path);
 		const deps: (readonly string[])[] = [];
 		const depValues: unknown[] = [];
+		const depVers: number[] = [];
 		const get: Get = (<T>(ref: Ref<T>): T => {
 			const depSegments = refSegments(ref);
-			const value = readSegments(depSegments);
+			const sn = resolveSchema(schema, depSegments);
+			const value =
+				sn === null
+					? undefined
+					: sn.kind === DERIVED
+						? evaluateDerived(depSegments, sn)
+						: readValue(depSegments, sn);
 			deps.push(depSegments);
 			depValues.push(value);
+			// A container is mutated in place by write-through, so its identity is
+			// stable across every write under it and `Object.is` would report a
+			// changed record as clean forever. Its subtree stamp moves instead.
+			depVers.push(
+				sn !== null && (sn.kind === BRANCH || sn.kind === BULK) ? revisionOf(depSegments) : -1,
+			);
 			return value as T;
 		}) as Get;
 		let value: unknown;
@@ -647,13 +689,14 @@ export function createStore<S>(shape: S): Store<S> {
 		if (node !== null) {
 			node.value = value;
 			// Mutate an existing record rather than replacing it: a re-evaluation
-			// already allocates the two dep arrays, and need not add a third object.
+			// already allocates the dep arrays, and need not add another object.
 			if (cached !== null) {
 				cached.deps = deps;
 				cached.depValues = depValues;
+				cached.depVers = depVers;
 				cached.checkedAt = version;
 			} else {
-				node.dcache = { deps, depValues, checkedAt: version };
+				node.dcache = { deps, depValues, depVers, checkedAt: version };
 			}
 		}
 		return value;
@@ -662,10 +705,32 @@ export function createStore<S>(shape: S): Store<S> {
 	function depsUnchanged(cached: DerivedCache): boolean {
 		const deps = cached.deps;
 		const values = cached.depValues;
+		const vers = cached.depVers;
 		for (let i = 0; i < deps.length; i++) {
-			if (!Object.is(readSegments(deps[i]), values[i])) return false;
+			const ver = vers[i];
+			if (ver >= 0) {
+				if (revisionOf(deps[i]) !== ver) return false;
+			} else if (!Object.is(readSegments(deps[i]), values[i])) return false;
 		}
 		return true;
+	}
+
+	/** `revision()` without the schema validation, for internal staleness checks. */
+	function revisionOf(segments: readonly string[]): number {
+		let node = root;
+		let i = 0;
+		for (; i < segments.length; i++) {
+			const child = lookupChild(node, segments[i]);
+			if (child === undefined) break;
+			node = child;
+		}
+		// An observed key of a flat holder has an exact stamp on its leaf record,
+		// just as its trie node used to carry.
+		if (i === segments.length - 1 && node.leaves !== null) {
+			const rec = node.leaves.get(segments[i]);
+			if (rec !== undefined) return rec.ver;
+		}
+		return node.ver;
 	}
 
 	function nodeSegments(node: Node): string[] {
@@ -722,11 +787,20 @@ export function createStore<S>(shape: S): Store<S> {
 		bumpToRoot(node, version);
 		if (i === segments.length) {
 			collectObservers(node, out);
-		} else {
-			// Nothing is materialized at the written path, so only subtree
-			// observers can care. Reaching here allocates nothing.
-			collectDeep(node, out);
+			return;
 		}
+		// The walk stops AT a flat holder for its keys: the leaf record, when one
+		// exists, carries the observers and the exact stamp.
+		if (i === segments.length - 1 && node.leaves !== null) {
+			const rec = node.leaves.get(segments[i]);
+			if (rec !== undefined) {
+				rec.ver = version;
+				collectLeaf(rec, out);
+			}
+		}
+		// Nothing else is materialized at the written path, so only subtree
+		// observers can care. Reaching here allocates nothing.
+		if (deepObserverCount > 0) collectDeep(node, out);
 	}
 
 	/**
@@ -925,9 +999,10 @@ export function createStore<S>(shape: S): Store<S> {
 	 */
 	function commitOne(staged: StagedWrite, source: string): void {
 		const bulk = stagedBulk(staged);
-		const prev = readAt(bulk, staged.segments, stagedSchema(staged));
+		const schemaNode = stagedSchema(staged);
+		const prev = readAt(bulk, staged.segments, schemaNode);
 		if (Object.is(prev, staged.value)) return;
-		applyWrite(staged, staged.segments, bulk, prev, staged.value, source);
+		applyWrite(staged, staged.segments, bulk, schemaNode.kind === CELL, prev, staged.value, source);
 	}
 
 	function commit(writes: Map<string, StagedWrite>, source: string): void {
@@ -1060,7 +1135,7 @@ export function createStore<S>(shape: S): Store<S> {
 	function reportError(error: unknown, owner: PortRecord | null): void {
 		const where = owner === null ? 'a commit subscriber' : `port "${owner.port.name}"`;
 		// eslint-disable-next-line no-console
-		console.error(`[@octanejs/segment] ${where} threw and was isolated:`, error);
+		console.error(`[@webeferen/segment] ${where} threw and was isolated:`, error);
 	}
 
 	function indexOfSlash(path: string): number {
@@ -1098,6 +1173,8 @@ export function createStore<S>(shape: S): Store<S> {
 		segments: readonly string[];
 		deps: (readonly string[])[];
 		depValues: unknown[];
+		/** Same contract as `DerivedCache.depVers`: subtree stamp for container deps, -1 for leaves. */
+		depVers: number[];
 		/** Bumped per load so a superseded response cannot publish over a newer one. */
 		generation: number;
 		teardownLive: (() => void) | null;
@@ -1173,11 +1250,23 @@ export function createStore<S>(shape: S): Store<S> {
 		const segments = state.segments;
 		const deps: (readonly string[])[] = [];
 		const depValues: unknown[] = [];
+		const depVers: number[] = [];
 		const get: Get = (<T>(dep: Ref<T>): T => {
 			const depSegments = refSegments(dep);
-			const value = readSegments(depSegments);
+			const sn = resolveSchema(schema, depSegments);
+			const value =
+				sn === null
+					? undefined
+					: sn.kind === DERIVED
+						? evaluateDerived(depSegments, sn)
+						: readValue(depSegments, sn);
 			deps.push(depSegments);
 			depValues.push(value);
+			// Same reasoning as the derived `get`: a container dep is identity-stable
+			// under write-through, so staleness for it is judged by subtree stamp.
+			depVers.push(
+				sn !== null && (sn.kind === BRANCH || sn.kind === BULK) ? revisionOf(depSegments) : -1,
+			);
 			return value as T;
 		}) as Get;
 		const ctx: LoadContext<never> = {
@@ -1199,6 +1288,7 @@ export function createStore<S>(shape: S): Store<S> {
 			state.controller = null;
 			state.deps = deps;
 			state.depValues = depValues;
+			state.depVers = depVers;
 			state.stale = false;
 			applyOne(segments, path, value, 'resource:load');
 			// A load that changed nothing still moved the status.
@@ -1215,6 +1305,7 @@ export function createStore<S>(shape: S): Store<S> {
 					state.controller = null;
 					state.deps = deps;
 					state.depValues = depValues;
+					state.depVers = depVers;
 					wakeAt(segments);
 				}
 				throw error;
@@ -1271,6 +1362,7 @@ export function createStore<S>(shape: S): Store<S> {
 			segments,
 			deps: [],
 			depValues: [],
+			depVers: [],
 			generation: 0,
 			teardownLive: null,
 			stale: false,
@@ -1378,7 +1470,12 @@ export function createStore<S>(shape: S): Store<S> {
 			if (state.status !== 'ready') continue;
 			if (!state.stale && state.deps.length > 0) {
 				for (let i = 0; i < state.deps.length; i++) {
-					if (Object.is(readSegments(state.deps[i]), state.depValues[i])) continue;
+					const ver = state.depVers[i];
+					const unchanged =
+						ver >= 0
+							? revisionOf(state.deps[i]) === ver
+							: Object.is(readSegments(state.deps[i]), state.depValues[i]);
+					if (unchanged) continue;
 					state.stale = true;
 					wakeForWrite(state.segments, woken);
 					break;
@@ -1515,6 +1612,9 @@ export function createStore<S>(shape: S): Store<S> {
 		for (const path of bulkPaths) {
 			const node = findNode(path.split('/'))!;
 			bumpToRoot(node, version);
+			// The whole partition was replaced, so every materialized descendant's
+			// stamp moves with it, exactly as replaceAll stamps them.
+			bumpSubtree(node, version);
 			collectSubtree(node, woken);
 			collectDeep(node, woken);
 		}
@@ -1527,6 +1627,13 @@ export function createStore<S>(shape: S): Store<S> {
 			applied.push({ path: staged.path, prev, next: staged.value });
 			wakeForWrite(staged.segments, woken);
 		}
+
+		// The same push a commit performs: an observed derivation's readers
+		// subscribed to an address nothing writes directly, so without this a
+		// derivation over hydrated data would keep its stale value, and its
+		// observers would sleep, until some unrelated later commit.
+		if (observedDerived.size > 0) pushDerived(woken);
+		if (resourceStates.size > 0) sweepResources(woken);
 
 		// Mark adopted resources so a reader can refresh behind the first paint.
 		//
@@ -1628,7 +1735,7 @@ export function createStore<S>(shape: S): Store<S> {
 			return;
 		}
 
-		applyWrite(target, segments, bulk, prev, value, source);
+		applyWrite(target, segments, bulk, true, prev, value, source);
 	}
 
 	/**
@@ -1643,6 +1750,7 @@ export function createStore<S>(shape: S): Store<S> {
 		addr: { path: string },
 		segments: readonly string[],
 		bulk: { node: Node; start: number } | null,
+		cell: boolean,
 		prev: unknown,
 		value: unknown,
 		source: string | undefined,
@@ -1652,19 +1760,49 @@ export function createStore<S>(shape: S): Store<S> {
 
 		let woken: Set<Observer> | null = null;
 		let single: Observer | null = null;
-		const node = findNode(segments);
-		if (node !== null) {
-			bumpToRoot(node, version);
-			const sole = soleObserver(node);
-			if (sole === undefined) {
-				woken = new Set();
-				collectObservers(node, woken);
-				if (woken.size === 0) woken = null;
-			} else single = sole;
+		// A direct cell child of a bulk is necessarily FLAT: nested holders have a
+		// longer tail. The explicit kind bit matters because a parameterized resource
+		// is also represented by `bulk`, and one argument has the same tail length.
+		const flatHolder =
+			bulk !== null && cell && segments.length === bulk.start + 1 ? bulk.node : null;
+		if (flatHolder !== null) {
+			const rec =
+				flatHolder.leaves === null
+					? undefined
+					: flatHolder.leaves.get(segments[segments.length - 1]);
+			bumpToRoot(flatHolder, version);
+			if (rec !== undefined) {
+				rec.ver = version;
+				const sole = deepObserverCount === 0 && rec.obs === null ? rec : soleLeaf(rec, flatHolder);
+				if (sole === undefined) {
+					woken = new Set();
+					collectLeaf(rec, woken);
+					if (deepObserverCount > 0) collectDeep(flatHolder, woken);
+					if (woken.size === 0) woken = null;
+				} else single = sole;
+			} else {
+				const found = deepObserverCount === 0 ? null : soleDeep(flatHolder);
+				if (found === undefined) {
+					woken = new Set();
+					collectDeep(flatHolder, woken);
+					if (woken.size === 0) woken = null;
+				} else single = found;
+			}
 		} else {
-			const found = wakeFallback(segments);
-			if (found === undefined) woken = fallbackSet(segments);
-			else single = found;
+			const node = findNode(segments);
+			if (node !== null) {
+				bumpToRoot(node, version);
+				const sole = deepObserverCount === 0 && node.obs === null ? node.obs1 : soleObserver(node);
+				if (sole === undefined) {
+					woken = new Set();
+					collectObservers(node, woken);
+					if (woken.size === 0) woken = null;
+				} else single = sole;
+			} else {
+				const found = wakeFallback(segments);
+				if (found === undefined) woken = fallbackSet(segments);
+				else single = found;
+			}
 		}
 
 		const pushes = observedDerived.size > 0 || resourceStates.size > 0;
@@ -1712,7 +1850,7 @@ export function createStore<S>(shape: S): Store<S> {
 	function wakeFallback(segments: readonly string[]): Observer | null | undefined {
 		const node = deepestNode(segments);
 		bumpToRoot(node, version);
-		return soleDeep(node);
+		return deepObserverCount === 0 ? null : soleDeep(node);
 	}
 
 	/** The multi-observer form of `wakeFallback`, once the sole-observer case is out. */
@@ -1855,6 +1993,12 @@ export function createStore<S>(shape: S): Store<S> {
 			schemaCursor = schema;
 		}
 		for (let i = first; i < segments.length; i++) {
+			// The last segment under a FLAT holder gets a leaf record on the holder
+			// itself instead of a trie node; `node` is that holder here, and it is
+			// pinned, because only a fixed holder is ever flat.
+			if (i === segments.length - 1 && schemaCursor.kind === BULK && schemaCursor.flat) {
+				return observeLeaf(node, segments[i], cb, options);
+			}
 			schemaCursor =
 				schemaCursor.kind === BULK
 					? schemaCursor.dynamic!
@@ -1867,9 +2011,18 @@ export function createStore<S>(shape: S): Store<S> {
 		}
 		const target = node;
 		if (schemaNode.kind === DERIVED) {
-			observedDerived.add(target);
 			// Seed the cache so the first commit has a previous value to compare.
-			evaluateDerived(segments, schemaNode);
+			// Seed FIRST, register second: a throwing seed (self-dependence, missing
+			// implementation, a derive that throws on current data) must leave the
+			// store as it was, not an `observedDerived` entry with no observer and no
+			// disposer that makes every later commit rethrow the same error.
+			try {
+				evaluateDerived(segments, schemaNode);
+			} catch (error) {
+				pruneUp(target);
+				throw error;
+			}
+			observedDerived.add(target);
 		}
 		// Observing a resource is what makes its load start and its staleness
 		// tracked, so the two lifecycles are tied together deliberately.
@@ -1878,8 +2031,56 @@ export function createStore<S>(shape: S): Store<S> {
 		// The node lives ON the observer, so the disposer closes over one variable instead
 		// of five and V8 allocates no context object for it. `live` doubles as the
 		// already-disposed flag it used to capture separately.
-		const observer: Observer = { cb, deep, live: true, node: target };
+		const observer: Observer = { cb, deep, live: true, leaf: null, node: target };
 		addObserver(target, observer);
+		if (deep) deepObserverCount++;
+		return () => detach(observer);
+	}
+
+	/**
+	 * Subscribe to one key of a FLAT holder (`SchemaNode.flat`): a leaf record on
+	 * the holder's own pinned node replaces the per-key trie node. Same contract
+	 * as the trie path; the record is deleted with its last observer, so memory
+	 * stays O(observed) exactly as pruning kept it.
+	 */
+	function observeLeaf(
+		holder: Node,
+		key: string,
+		cb: () => void,
+		options?: ObserveOptions,
+	): Dispose {
+		let leaves = holder.leaves;
+		if (leaves === null) holder.leaves = leaves = new Map();
+		let rec = leaves.get(key);
+		let observer: Observer;
+		if (rec === undefined) {
+			// Seeded with the HOLDER's stamp, not zero: the answer `revision()` gave
+			// for this address a moment ago was the holder's (conservative), and a
+			// fresh record must not travel backwards past it.
+			rec = {
+				key,
+				ver: holder.ver,
+				view: undefined,
+				obs: null,
+				cb,
+				deep: options?.deep === true,
+				live: true,
+				leaf: null,
+				node: holder,
+			};
+			rec.leaf = rec;
+			leaves.set(key, rec);
+			observer = rec;
+		} else {
+			observer = {
+				cb,
+				deep: options?.deep === true,
+				live: true,
+				leaf: rec,
+				node: holder,
+			};
+			addLeafObserver(rec, observer);
+		}
 		return () => detach(observer);
 	}
 
@@ -1887,8 +2088,17 @@ export function createStore<S>(shape: S): Store<S> {
 	function detach(observer: Observer): void {
 		if (!observer.live) return;
 		observer.live = false;
+		const rec = observer.leaf;
+		if (rec !== null) {
+			removeLeafObserver(rec, observer);
+			// One map delete instead of a prune walk: the record IS the whole
+			// materialization for a flat leaf.
+			if (!rec.live && rec.obs === null) observer.node.leaves!.delete(rec.key);
+			return;
+		}
 		const target = observer.node;
 		removeObserver(target, observer);
+		if (observer.deep) deepObserverCount--;
 		if (!hasObservers(target)) {
 			// Only a derived node ever appears in `observedDerived` or holds a cache,
 			// so a leaf's detach — the list-teardown path — skips both stores.
@@ -1936,12 +2146,14 @@ export function createStore<S>(shape: S): Store<S> {
 
 	function derive<T>(fn: (get: Get) => T): Ref<T, 'derived'> {
 		const seg = `${DERIVE_PREFIX}${nextDerived++}`;
+		// Same key ORDER as `node()` in schema.ts: a literal with the same keys in a
+		// different order is a different hidden class, and every `schemaNode.kind`
+		// site in an app using anonymous derivations would go polymorphic.
 		const schemaNode: SchemaNode = {
 			kind: DERIVED,
 			bulk: 0,
 			children: null,
 			dynamic: null,
-			proto: null,
 			init: undefined,
 			derive: fn as SchemaNode['derive'],
 			action: null,
@@ -1949,8 +2161,10 @@ export function createStore<S>(shape: S): Store<S> {
 			resource: null,
 			fixed: true,
 			path: seg,
+			proto: null,
 			arity: 0,
 			transient: false,
+			flat: false,
 		};
 		if (schema.children === null) schema.children = new Map();
 		schema.children.set(seg, schemaNode);
@@ -1968,6 +2182,22 @@ export function createStore<S>(shape: S): Store<S> {
 					'Only a derive() or resourceOf() result can be released.',
 			);
 		}
+		// A released resource takes its transient state with it, exactly as
+		// `forget()` would: the released schema node is what `applyOne` and
+		// `forget` resolve through, so an entry left behind would be stranded
+		// forever (unforgettable, un-swept), an aborted-too-late load would throw
+		// into `resolveSchema` returning null, and a `live()` channel would leak
+		// its external subscription for the process lifetime.
+		if (seg.startsWith(FETCH_PREFIX) && resourceStates.size > 0) {
+			const prefix = `${seg}/`;
+			for (const [path, state] of resourceStates) {
+				if (path !== seg && !path.startsWith(prefix)) continue;
+				state.generation++;
+				state.controller?.abort();
+				state.teardownLive?.();
+				resourceStates.delete(path);
+			}
+		}
 		schema.children?.delete(seg);
 		const node = lookupChild(root, seg);
 		if (node === undefined) return;
@@ -1980,12 +2210,12 @@ export function createStore<S>(shape: S): Store<S> {
 
 	function resourceOf(impl: unknown): unknown {
 		const seg = `${FETCH_PREFIX}${nextFetch++}`;
+		// Key order matches `node()` in schema.ts; see `derive` above for why.
 		const schemaNode: SchemaNode = {
 			kind: RESOURCE,
 			bulk: 0,
 			children: null,
 			dynamic: null,
-			proto: null,
 			init: undefined,
 			derive: null,
 			action: null,
@@ -1993,9 +2223,11 @@ export function createStore<S>(shape: S): Store<S> {
 			resource: normalizeResource(impl, seg),
 			fixed: true,
 			path: seg,
+			proto: null,
 			// Unknown until the first call, exactly as for a declared resource.
 			arity: -1,
 			transient: false,
+			flat: false,
 		};
 		if (schema.children === null) schema.children = new Map();
 		schema.children.set(seg, schemaNode);
@@ -2006,13 +2238,7 @@ export function createStore<S>(shape: S): Store<S> {
 	function revision(target: AnyRef): number {
 		const segments = refSegments(target);
 		if (resolveSchema(schema, segments) === null) fail(`no such path "${target.path}"`);
-		let node = root;
-		for (let i = 0; i < segments.length; i++) {
-			const child = lookupChild(node, segments[i]);
-			if (child === undefined) break;
-			node = child;
-		}
-		return node.ver;
+		return revisionOf(segments);
 	}
 
 	function ref(path: string): Ref<unknown> {
@@ -2082,18 +2308,20 @@ export function createStore<S>(shape: S): Store<S> {
 	 * accessor tree has to answer the same internals question a leaf does.
 	 * Non-enumerable so spreading or logging a view stays clean.
 	 */
-	function stampAddress(view: object, segments: readonly string[], joined?: string): void {
+	function stampAddress(view: object, segments: readonly string[], joined?: string): RefInternals {
+		const internals: RefInternals = {
+			segments,
+			holder,
+			joined,
+			schema: undefined,
+			bulk: undefined,
+			bulkResolved: false,
+		};
 		Object.defineProperty(view, REF_INTERNALS, {
-			value: {
-				segments,
-				holder,
-				joined,
-				schema: undefined,
-				bulk: undefined,
-				bulkResolved: false,
-			},
+			value: internals,
 			enumerable: false,
 		});
+		return internals;
 	}
 
 	/**
@@ -2124,16 +2352,33 @@ export function createStore<S>(shape: S): Store<S> {
 		if (schemaNode.children !== null) {
 			for (const [key, child] of schemaNode.children) {
 				Object.defineProperty(proto, key, {
-					get(this: object): unknown {
-						const internals = internalsOf(this)!;
-						const built = makeView(child, undefined, [...internals.segments, key]);
-						Object.defineProperty(this, key, {
-							value: built,
-							enumerable: true,
-							configurable: true,
-						});
-						return built;
-					},
+					// Select once while building the prototype. CELL and DERIVED share the
+					// small Ref shape; branching inside every getter lost the measured win.
+					get:
+						child.kind === CELL || child.kind === DERIVED
+							? function (this: object): unknown {
+									const internals = internalsOf(this)!;
+									const built = new RefImpl(undefined, [...internals.segments, key], holder);
+									built.schema = child;
+									built.bulk = internals.bulk;
+									built.bulkResolved = internals.bulkResolved;
+									Object.defineProperty(this, key, {
+										value: built,
+										enumerable: true,
+										configurable: true,
+									});
+									return built;
+								}
+							: function (this: object): unknown {
+									const internals = internalsOf(this)!;
+									const built = makeView(child, undefined, [...internals.segments, key]);
+									Object.defineProperty(this, key, {
+										value: built,
+										enumerable: true,
+										configurable: true,
+									});
+									return built;
+								},
 					enumerable: true,
 					configurable: true,
 				});
@@ -2261,11 +2506,29 @@ export function createStore<S>(shape: S): Store<S> {
 				// checks are per-view constants rather than per-call work.
 				const innerDeep = inner.kind === BULK || inner.kind === BRANCH;
 				const innerCallable = inner.kind === ACTION || inner.kind === TASK;
-				// Resolved once: a bulk holder is schema-bounded and materialized eagerly, so
-				// one that has no node here (a segment nested inside another one) never gains
-				// one, and `null` is a permanent answer rather than a stale one.
+				/**
+				 * Whether this view's own trie node is a PERMANENT anchor.
+				 *
+				 * Only a fixed holder's node is: `materializeFixed` pins it for the
+				 * store's lifetime. A NESTED segment (one inside another bulk holder)
+				 * can still have a node whenever something below it is observed, but
+				 * that node is transient: it is pruned with its last observer, and it
+				 * never owns the bulk value (`bulkRoot`'s contract is that everything
+				 * below the outermost holder lives in THAT holder's opaque value). An
+				 * earlier version memoized `findNode` here unconditionally, and a
+				 * nested view whose first `.at()` ran while the chain happened to be
+				 * materialized would then write through the transient node, shadowing
+				 * the real bulk value, and hang observers on a node pruning had
+				 * already orphaned. So a nested view never trusts the trie: its
+				 * holder memo comes from `bulkRoot` (whose answer IS permanent, since
+				 * the outermost holder is pinned), and its subscriptions take the ref
+				 * path.
+				 */
+				const anchored = schemaNode.fixed;
+				/** Anchored AND cell-shaped: observers live in leaf records on the holder. */
+				const flat = schemaNode.flat;
 				let self: Node | null | undefined;
-				let childBulk: { node: Node; start: number } | null | undefined;
+				let childBulk: BulkAt | null | undefined;
 				// One slot for the key asked for last, because the adapter reads a record one
 				// field at a time: `.at(id)` is called once per field. Measured at 285 ns per
 				// field for three fields of one record without it, 143 with it. One slot and
@@ -2274,46 +2537,86 @@ export function createStore<S>(shape: S): Store<S> {
 				let lastView: unknown;
 				const view: Record<string, unknown> = {
 					path: here,
-					at: (key: string | number) => {
-						const child = String(key);
-						// Interned on the trie node: a component re-reading its own address does not
-						// rebuild the descriptor, and for a record that is the whole accessor subtree
-						// rather than one ref. Pruning drops it with the node, so memory stays
-						// O(observed), and ref identity is unspecified by contract.
-						//
-						// Checked BEFORE the last-key slot, and it deliberately does not write that
-						// slot: keys cycling through a mounted window always miss it, and paying two
-						// closure writes per read to serve a case this branch already handled cost
-						// 24% on the list-read path when measured the other way round.
-						if (self === undefined) self = findNode(segments);
-						const node = self === null ? undefined : lookupChild(self, child);
-						if (node !== undefined && node.view !== undefined) return node.view;
-						if (child === lastKey) return lastView;
-						// `undefined` path: the ref joins it from segments only if something
-						// asks, which a write with no listener never does.
-						// A spread, measured against `segments.concat(child)`: the spread of a
-						// packed array is 90 ns for this whole call, concat 137 ns.
-						const made = makeView(inner, undefined, [...segments, child]);
-						// Every child of a bulk holder shares one element schema and one bulk holder,
-						// and both answers are independent of the key. Seeding them here is what lets
-						// a fresh `.at()` read or write skip the schema walk and the holder walk that
-						// dominate its cost.
-						const internals = internalsOf(made as object);
-						if (internals !== undefined) {
-							internals.schema = inner;
-							if (childBulk === undefined) {
-								// A holder with no node of its own sits inside an enclosing one, and the
-								// enclosing answer is the same for the view and for every child of it.
-								childBulk =
-									self !== null ? { node: self, start: segments.length } : bulkRoot(segments);
+					// Flat holders get a dedicated closure. The generic path must branch on
+					// holder shape and anchoring; both are constants here and paying those
+					// checks on every list access was measurable.
+					at: flat
+						? (key: string | number) => {
+								const child = typeof key === 'string' ? key : String(key);
+								if (self === undefined) self = findNode(segments);
+								const rec = self!.leaves === null ? undefined : self!.leaves.get(child);
+								if (rec !== undefined && rec.view !== undefined) return rec.view;
+								if (child === lastKey) return lastView;
+								// `flat` guarantees a CELL, so skip `makeView`'s kind switch and
+								// the symbol lookup that would only recover this same Ref.
+								const made = new RefImpl(undefined, [...segments, child], holder);
+								made.schema = inner;
+								if (childBulk === undefined) {
+									childBulk = { node: self!, start: segments.length };
+								}
+								made.bulk = childBulk;
+								made.bulkResolved = true;
+								if (rec !== undefined) rec.view = made;
+								lastKey = child;
+								return (lastView = made);
 							}
-							internals.bulk = childBulk;
-							internals.bulkResolved = true;
-						}
-						if (node !== undefined) node.view = made;
-						lastKey = child;
-						return (lastView = made);
-					},
+						: (key: string | number) => {
+								const child = String(key);
+								// Interned on the trie node: a component re-reading its own address does not
+								// rebuild the descriptor, and for a record that is the whole accessor subtree
+								// rather than one ref. Pruning drops it with the node, so memory stays
+								// O(observed), and ref identity is unspecified by contract. Anchored views
+								// only: a nested view's nodes are transient, so nothing durable can be
+								// interned on them.
+								//
+								// Checked BEFORE the last-key slot, and it deliberately does not write that
+								// slot: keys cycling through a mounted window always miss it, and paying two
+								// closure writes per read to serve a case this branch already handled cost
+								// 24% on the list-read path when measured the other way round.
+								let node: Node | undefined;
+								if (anchored) {
+									if (self === undefined) self = findNode(segments);
+									node = self === null ? undefined : lookupChild(self, child);
+									if (node !== undefined && node.view !== undefined) return node.view;
+								}
+								if (child === lastKey) return lastView;
+								// `undefined` path: the ref joins it from segments only if something
+								// asks, which a write with no listener never does.
+								// A spread, measured against `segments.concat(child)`: the spread of a
+								// packed array is 90 ns for this whole call, concat 137 ns.
+								const childSegments = [...segments, child];
+								let made: unknown;
+								let internals: RefInternals | undefined;
+								if (inner.kind === BRANCH) {
+									// The kind is constant for this bulk view; construct its lazy group
+									// directly and keep the internals `stampAddress` just created.
+									made = Object.create(groupProto(inner)) as object;
+									internals = stampAddress(made as object, childSegments);
+								} else {
+									made = makeView(inner, undefined, childSegments);
+									internals = internalsOf(made as object);
+								}
+								// Every child of a bulk holder shares one element schema and one bulk holder,
+								// and both answers are independent of the key. Seeding them here is what lets
+								// a fresh `.at()` read or write skip the schema walk and the holder walk that
+								// dominate its cost.
+								if (internals !== undefined) {
+									internals.schema = inner;
+									if (childBulk === undefined) {
+										// An anchored holder is its own path's outermost holder; a nested one
+										// sits inside an enclosing holder, and `bulkRoot` names it. Both
+										// answers are permanent, so the memo is sound either way.
+										childBulk = anchored
+											? { node: self!, start: segments.length }
+											: bulkRoot(segments);
+									}
+									internals.bulk = childBulk;
+									internals.bulkResolved = true;
+								}
+								if (node !== undefined) node.view = made;
+								lastKey = child;
+								return (lastView = made);
+							},
 					/**
 					 * Subscribe to one key WITHOUT building its ref. A mounted list row is
 					 * `observe(rows.at(id), cb)`, and profiling a 200-row mount put a third
@@ -2323,38 +2626,71 @@ export function createStore<S>(shape: S): Store<S> {
 					 * constants, so a row costs the trie child, the observer, and the
 					 * disposer, nothing else. Same contract as `observe(rows.at(key), cb)`.
 					 */
-					observe: (key: string | number, cb: () => void, options?: ObserveOptions) => {
-						const child = String(key);
-						if (self === undefined) self = findNode(segments);
-						// Nested inside another bulk holder there is no node to hang the
-						// child on; the ref path handles that shape and stays the oracle.
-						if (self === null) {
-							return observe((view.at as (key: string) => Ref<unknown>)(child), cb, options);
-						}
-						if (innerCallable) {
-							fail(`"${here}/${child}" is an action and cannot be observed`);
-						}
-						const target = childOf(self, child, inner);
-						if (inner.kind === DERIVED) {
-							observedDerived.add(target);
-							evaluateDerived([...segments, child], inner);
-						} else if (inner.kind === RESOURCE) {
-							const segs = [...segments, child];
-							ensureResource(segs.join('/'), segs, inner);
-						}
-						const observer: Observer = {
-							cb,
-							deep: innerDeep || options?.deep === true,
-							live: true,
-							node: target,
-						};
-						addObserver(target, observer);
-						return () => detach(observer);
-					},
+					// The flat subscription path likewise avoids the nested-holder,
+					// callable-element, and node-materialization branches.
+					observe: flat
+						? (key: string | number, cb: () => void, options?: ObserveOptions) => {
+								if (self === undefined) self = findNode(segments);
+								return observeLeaf(self!, typeof key === 'string' ? key : String(key), cb, options);
+							}
+						: (key: string | number, cb: () => void, options?: ObserveOptions) => {
+								const child = String(key);
+								// A nested view has no permanent node to hang the child on (its own
+								// node, when one exists, is pruned with its last observer, and an
+								// observer registered on a pruned node is unreachable from the
+								// root and never woken again). The ref path rematerializes from
+								// the pinned holder and stays the oracle for that shape.
+								if (!anchored) {
+									return observe((view.at as (key: string) => Ref<unknown>)(child), cb, options);
+								}
+								if (innerCallable) {
+									fail(`"${here}/${child}" is an action and cannot be observed`);
+								}
+								if (self === undefined) self = findNode(segments);
+								const target = childOf(self!, child, inner);
+								if (inner.kind === DERIVED) {
+									// Seed first, register second: a throwing seed must leave the
+									// store exactly as it was, not a poisoned `observedDerived`
+									// entry that makes every later commit throw.
+									try {
+										evaluateDerived([...segments, child], inner);
+									} catch (error) {
+										pruneUp(target);
+										throw error;
+									}
+									observedDerived.add(target);
+								} else if (inner.kind === RESOURCE) {
+									const segs = [...segments, child];
+									ensureResource(segs.join('/'), segs, inner);
+								}
+								const observer: Observer = {
+									cb,
+									deep: innerDeep || options?.deep === true,
+									live: true,
+									leaf: null,
+									node: target,
+								};
+								addObserver(target, observer);
+								if (observer.deep) deepObserverCount++;
+								return () => detach(observer);
+							},
 				};
 				if (schemaNode.bulk === BULK_SEGMENT) {
-					view.replaceAll = (next: unknown) => replaceAll(schemaNode, here, segments, next);
-					view.snapshot = () => readValue(segments, schemaNode);
+					// `anchored` is threaded through: only a holder that OWNS its value can
+					// swap it atomically. An earlier version asked `findNode` instead, and a
+					// nested segment whose chain happened to be materialized by an observer
+					// would swap the transient node's shadow value rather than failing.
+					view.replaceAll = (next: unknown) =>
+						replaceAll(schemaNode, anchored, here, segments, next);
+					view.snapshot = anchored
+						? // The anchored holder's node IS the value's home, and it is pinned, so
+							// the memoized node read replaces a per-call `bulkRoot` walk. Measured
+							// at ~27 ns per read through `readValue`, ~17 through the node.
+							() => {
+								if (self === undefined) self = findNode(segments);
+								return self!.value;
+							}
+						: () => readValue(segments, schemaNode);
 				}
 				stampAddress(view, segments);
 				return view;
@@ -2391,39 +2727,50 @@ export function createStore<S>(shape: S): Store<S> {
 	 */
 	function replaceAll(
 		schemaNode: SchemaNode,
+		anchored: boolean,
 		path: string,
 		segments: readonly string[],
 		next: unknown,
 	): void {
-		const node = findNode(segments);
-		if (node === null) {
-			// Only a segment with no bulk holder above it owns its own value; a
-			// nested one lives inside its parent's opaque value, where there is
-			// nothing to swap atomically.
+		// Only a segment with no bulk holder above it owns its own value; a
+		// nested one lives inside its parent's opaque value, where there is
+		// nothing to swap atomically. Decided by the SCHEMA, not by `findNode`:
+		// a nested chain can be materialized by an observer, and swapping that
+		// transient node's value would shadow the real bulk value.
+		if (!anchored) {
 			fail(
 				`segment "${path}" is nested inside another bulk holder, so it has no ` +
 					'independent value to replace; write its keys instead',
 			);
 		}
+		const node = findNode(segments)!;
 		version++;
 		const prev = node.value;
 		node.value = next;
 		bumpToRoot(node, version);
+		// Every materialized descendant's contents were just replaced wholesale, so
+		// their stamps move too; otherwise `revision(rows.at(id))` would keep
+		// reporting the pre-replacement number, a missed real change.
+		bumpSubtree(node, version);
 		const woken = new Set<Observer>();
 		collectSubtree(node, woken);
 		collectDeep(node, woken);
-		for (const derived of observedDerived) {
-			const had = derived.dcache !== null;
-			const previous = had ? derived.value : undefined;
-			const value = evaluateDerived(nodeSegments(derived), derived.schema);
-			if (had && Object.is(previous, value)) continue;
-			collectObservers(derived, woken);
-		}
+		pushDerived(woken);
 		notify(woken, {
 			id: ++commitId,
 			source: 'replaceAll',
 			writes: [{ path, prev, next }],
 		});
+	}
+
+	/** Stamp an observed subtree after a bulk replacement. O(materialized). */
+	function bumpSubtree(node: Node, stamp: number): void {
+		if (node.leaves !== null) for (const rec of node.leaves.values()) rec.ver = stamp;
+		if (node.children === null) return;
+		for (const child of node.children.values()) {
+			child.ver = stamp;
+			bumpSubtree(child, stamp);
+		}
 	}
 
 	const rootView = makeView(schema, '', []) as View<S>;

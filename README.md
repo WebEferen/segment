@@ -2,28 +2,39 @@
 	<img src="./assets/lockup.svg" alt="Segment" width="380" />
 </p>
 
-<p align="center">State for Octane, addressed by path.</p>
+<p align="center">Framework-agnostic state, addressed by path.</p>
 
-# @octanejs/segment
+# @webeferen/segment
 
-```tsx
-import { createStore, useValue } from '@octanejs/segment';
+```ts
+import { createStore } from '@webeferen/segment';
 
 export const store = createStore({ theme: 'light', count: 0 });
 export const s = store.state;
 
-export function Counter() @{
-	const [count, setCount] = useValue(s.count);
-	<button onClick={() => setCount((n) => n + 1)}>{count as string}</button>
-}
+store.observe(s.count, () => console.log('count:', store.get(s.count)));
+store.update(s.count, (count) => count + 1);
 ```
 
-That is the whole setup. A plain value is a piece of state; `useValue` reads it and
-hands back a setter.
+That is the whole core setup. A plain value is a piece of state, every value has a
+structural address, and subscriptions wake only for the address that changed.
 
-> **Status: experimental.** APIs still move. The agnostic core lives at
-> `@octanejs/segment/core` and imports neither Octane nor the DOM, so it also runs
-> in Node and in a worker.
+The default export and the compatibility `@webeferen/segment/core` entry point import
+neither a UI framework nor the DOM, so they run in a browser, Node.js, and a worker.
+The optional Octane hooks live at `@webeferen/segment/octane`.
+
+> **Status: experimental.** APIs still move.
+
+## Package entry points
+
+| Import                      | Purpose                                 |
+| --------------------------- | --------------------------------------- |
+| `@webeferen/segment`        | Framework-agnostic state engine         |
+| `@webeferen/segment/core`   | Compatibility alias for the same engine |
+| `@webeferen/segment/octane` | Optional Octane hooks                   |
+
+Run the included interactive example with `pnpm playground`, or create a production
+build with `pnpm playground:build`.
 
 ## Why this exists
 
@@ -46,7 +57,16 @@ A raw value declares state and supplies its initial value. You only reach for a
 marker where a value cannot carry the information.
 
 ```ts
-import { createStore, action, cell, derived, list, resource, segment, task } from '@octanejs/segment';
+import {
+	createStore,
+	action,
+	cell,
+	derived,
+	list,
+	resource,
+	segment,
+	task,
+} from '@webeferen/segment';
 
 type UserId = string & { readonly __brand: 'UserId' };
 
@@ -99,18 +119,23 @@ A store of plain data never calls `.with()` at all.
 
 Two of these three words never appear in your code, and that is the point.
 
-| What you write | Who answers a read | Writable |
-| --- | --- | --- |
-| `theme: 'light'` | the store's memory | yes |
-| `derived<T>()` | your function, on demand | no, it is computed |
-| `resource<T>()` | the network, cached by the store | through `save()` |
-| `ui: { … }` | the addresses below it, together | through `patch()` |
-| `segment({ … })` | the same, for a lot of data | through `replaceAll()` |
-| `action()` / `task()` | nothing, you call these | no |
+| What you write        | Who answers a read               | Writable               |
+| --------------------- | -------------------------------- | ---------------------- |
+| `theme: 'light'`      | the store's memory               | yes                    |
+| `derived<T>()`        | your function, on demand         | no, it is computed     |
+| `resource<T>()`       | the network, cached by the store | through `save()`       |
+| `ui: { … }`           | the addresses below it, together | through `patch()`      |
+| `segment({ … })`      | the same, for a lot of data      | through `replaceAll()` |
+| `action()` / `task()` | nothing, you call these          | no                     |
 
-## Three hooks, and you only need the first
+## Octane adapter
+
+The optional adapter keeps the core independent from Octane while adding render-aware
+subscriptions, Suspense integration, and drafts.
 
 ```tsx
+import { useDraft, useStatus, useValue } from '@webeferen/segment/octane';
+
 const [theme, setTheme] = useValue(s.theme); //         read and write
 const [total] = useValue(s.cart.total); //               derived: the setter is `never`
 const [user] = useValue(s.users.at(id)); //              a whole record
@@ -234,7 +259,7 @@ export async function publish(label: string): Promise<string> {
 const [name] = useValue(s.users.at(id).name); //   in a render: subscribes
 const [length] = useValue(queryLength);
 const [fetched] = useValue(fetchUserName(id)); //  waits
-<button onClick={() => setUserName(id, 'Ada')}>{'Rename'}</button>
+<button onClick={() => setUserName(id, 'Ada')}>{'Rename'}</button>;
 ```
 
 No source string is passed to `store.set`: in development the commit is named after

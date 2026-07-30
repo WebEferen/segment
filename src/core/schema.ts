@@ -19,7 +19,7 @@ import type {
  * happens to contain a field named `kind` would be misread as a marker, silently
  * producing a store with a missing subtree.
  */
-export const DEF: unique symbol = Symbol('@octanejs/segment.def');
+export const DEF: unique symbol = Symbol('@webeferen/segment.def');
 
 export const BRANCH = 0;
 export const CELL = 1;
@@ -108,6 +108,15 @@ export interface SchemaNode {
 	 * 0 for a plain resource. `resolveSchema` skips exactly this many segments.
 	 */
 	arity: number;
+	/**
+	 * True for a FIXED bulk holder whose element shape is a single cell. Such a
+	 * holder stores its observers in a flat per-key record on its own (pinned)
+	 * node instead of materializing a trie node per observed key: a leaf under
+	 * it can have no children, no derivations, and no resources, so the only
+	 * thing a node would carry is the observer list and a version stamp. Never
+	 * set for a nested holder, whose own node is transient.
+	 */
+	flat: boolean;
 }
 
 // ── Markers ─────────────────────────────────────────────────────────────────
@@ -208,7 +217,7 @@ function isValue(shape: unknown): boolean {
 }
 
 function fail(message: string): never {
-	throw new Error(`[@octanejs/segment] ${message}`);
+	throw new Error(`[@webeferen/segment] ${message}`);
 }
 
 function join(parent: string, segmentName: string): string {
@@ -231,6 +240,7 @@ function node(kind: number, path: string, fixed: boolean): SchemaNode {
 		proto: null,
 		arity: 0,
 		transient: false,
+		flat: false,
 	};
 }
 
@@ -281,6 +291,7 @@ export function compileSchema(shape: unknown, path = '', fixed = true): SchemaNo
 				// Everything under a bulk holder is unbounded, so it stops being
 				// eagerly materialized here.
 				n.dynamic = compileSchema(inner, join(path, '*'), false);
+				n.flat = fixed && n.dynamic.kind === CELL;
 				return n;
 			}
 			default:

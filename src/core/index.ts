@@ -1,4 +1,4 @@
-// @octanejs/segment/core — path-addressed state, with no dependency on Octane,
+// @webeferen/segment — path-addressed state, with no dependency on Octane,
 // the DOM, or any renderer. It runs in a browser, in Node, and in a worker.
 //
 // The design is constrained by two spikes that were run before any of this was

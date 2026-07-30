@@ -1,0 +1,8 @@
+packages:
+  - playground
+
+allowBuilds:
+  esbuild: true
+
+minimumReleaseAgeExclude:
+  - octane@0.1.21

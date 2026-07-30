@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createStore, derived } from '../src/core/index.js';
-import { makeStore } from './fixture.js';
+import { makeStore, uid } from './fixture.js';
 
 describe('derivations', () => {
 	it('does not evaluate until read', () => {
@@ -122,5 +122,53 @@ describe('derivations', () => {
 		// The failed evaluation must not have poisoned the cycle guard.
 		expect(() => store.get(store.state.bad)).toThrow('derive failed');
 		expect(store.get(store.state.n)).toBe(1);
+	});
+});
+
+// Writes go THROUGH to the bulk value, so a derivation that reads a whole
+// container sees the same object identity across every write under it. Its
+// changes are real regardless, and both the recompute and the wake must happen.
+describe('derivations over containers', () => {
+	it('recomputes and wakes when a container dep is mutated in place', () => {
+		const { store, s } = makeStore();
+		const count = store.derive(
+			(get) => Object.keys(get(store.ref('users')) as Record<string, unknown>).length,
+		);
+		expect(store.get(count)).toBe(0);
+		const woken = vi.fn();
+		const off = store.observe(count, woken);
+		store.set(s.users.at(uid(1)).name, 'Ada');
+		expect(woken).toHaveBeenCalledTimes(1);
+		expect(store.get(count)).toBe(1);
+		off();
+		store.release(count);
+	});
+
+	it('does not trust container identity even with no observer attached', () => {
+		const { store, s } = makeStore();
+		const count = store.derive(
+			(get) => Object.keys(get(store.ref('users')) as Record<string, unknown>).length,
+		);
+		expect(store.get(count)).toBe(0);
+		store.set(s.users.at(uid(2)).name, 'Grace');
+		expect(store.get(count)).toBe(1);
+		store.release(count);
+	});
+});
+
+describe('a derivation whose seeding evaluation throws', () => {
+	it('leaves the store unpoisoned: later commits apply and notify normally', () => {
+		const store = createStore({ n: 0, boom: derived<number>() }).with(() => ({
+			boom: () => {
+				throw new Error('boom');
+			},
+		}));
+		const s = store.state;
+		expect(() => store.observe(s.boom, () => {})).toThrow('boom');
+		const woken = vi.fn();
+		store.observe(s.n, woken);
+		expect(() => store.set(s.n, 1)).not.toThrow();
+		expect(woken).toHaveBeenCalledTimes(1);
+		expect(store.get(s.n)).toBe(1);
 	});
 });

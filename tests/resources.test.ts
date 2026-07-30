@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { createStore, resource } from '../src/core/index.js';
 import { flush, makeResourceStore } from './resource-fixture.js';
 
 describe('resources: reading', () => {
@@ -46,6 +47,27 @@ describe('resources: reading', () => {
 		expect(store.resource(ref).status).toBe('ready');
 		expect(observer).toHaveBeenCalled();
 		expect(commits).toContain('resource:load:users/u1/avatar');
+	});
+
+	it('notifies an observed one-argument resource for a live value', () => {
+		let emit = (_value: string) => {};
+		const store = createStore({ lookup: resource<string, [id: string]>() }).with(() => ({
+			lookup: {
+				load: () => new Promise<string>(() => {}),
+				live: (ctx) => {
+					emit = ctx.emit;
+				},
+			},
+		}));
+		const ref = store.state.lookup('one');
+		const observer = vi.fn();
+		const off = store.observe(ref, observer);
+
+		emit('ready');
+
+		expect(store.get(ref)).toBe('ready');
+		expect(observer).toHaveBeenCalledTimes(1);
+		off();
 	});
 
 	it('moves the subtree revision when a resource settles', async () => {
@@ -316,5 +338,22 @@ describe('resources: staleness and retention', () => {
 		await flush();
 		// An error must survive so a reader can see it.
 		expect(store.stats().resources).toBe(1);
+	});
+
+	it('release() of a resourceOf tears down its live channel and transient state', async () => {
+		const { store } = makeResourceStore();
+		const teardown = vi.fn();
+		const feed = store.resourceOf({
+			load: async () => 'first',
+			live: () => teardown,
+		});
+		store.resource(feed);
+		await flush();
+		expect(store.stats().resources).toBe(1);
+		// The documented pattern is a per-component resourceOf released on
+		// unmount, which routinely happens while the channel is still open.
+		store.release(feed);
+		expect(teardown).toHaveBeenCalledTimes(1);
+		expect(store.stats().resources).toBe(0);
 	});
 });

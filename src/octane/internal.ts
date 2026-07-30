@@ -16,7 +16,7 @@ export function subSlot(slot: symbol | undefined, tag: string): symbol {
 	// them onto the bare path and collide their state.
 	if (slot === undefined) {
 		let bare = bareTagCache.get(tag);
-		if (bare === undefined) bareTagCache.set(tag, (bare = Symbol.for(`@octanejs/segment:${tag}`)));
+		if (bare === undefined) bareTagCache.set(tag, (bare = Symbol.for(`@webeferen/segment:${tag}`)));
 		return bare;
 	}
 	let byTag = subSlotCache.get(slot);

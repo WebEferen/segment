@@ -1,8 +1,8 @@
 # Segment brand assets
 
-Visual identity for `@octanejs/segment`. Segment is a sibling of Octane, not a
-separate brand: the ink, the red, the stroke weight and the letterforms are
-Octane's, taken from `icon.svg` and `icon-black.svg` at the root of this repo.
+Visual identity for `@webeferen/segment`. The mark was originally designed beside
+Octane; its ink, red, stroke weight, and letterforms preserve that visual lineage
+after Segment became a standalone package.
 
 ## The mark
 
@@ -49,10 +49,10 @@ at a single height.
 | Token      | Light surface | Dark surface | Role                                                      |
 | ---------- | ------------- | ------------ | --------------------------------------------------------- |
 | Ink        | `#5B5751`     | `#F4EEE8`    | Field boundary, dormant addresses, wordmark               |
-| Live       | `#E90826`     | `#FF415A`    | The lit block, the only colour that is not `currentColor`  |
-| Ground     | any           | `#1A1614`    | Card ground for `og.svg`                                   |
-| Field tint | n/a           | `#332B27`    | `og.svg` background texture only                           |
-| Muted ink  | n/a           | `#C9BFB5`    | `og.svg` tagline only                                      |
+| Live       | `#E90826`     | `#FF415A`    | The lit block, the only colour that is not `currentColor` |
+| Ground     | any           | `#1A1614`    | Card ground for `og.svg`                                  |
+| Field tint | n/a           | `#332B27`    | `og.svg` background texture only                          |
+| Muted ink  | n/a           | `#C9BFB5`    | `og.svg` tagline only                                     |
 
 Both ink values and both live values are Octane's, unchanged. Measured contrast:
 
@@ -93,16 +93,15 @@ on a photograph.
 
 | File            | Size     | Notes                                                       |
 | --------------- | -------- | ----------------------------------------------------------- |
-| `logo.svg`      | 40x40    | Mark alone, pinned light. 2 units of padding on every side.  |
-| `logo-dark.svg` | 40x40    | Same geometry, pinned dark.                                  |
-| `lockup.svg`    | 512x72   | Mark plus wordmark, adapts to colour scheme.                 |
-| `og.svg`        | 1200x630 | Social card. Text is set in a system sans stack.             |
-| `logo.png`      | 512x512  | Rasterized `logo.svg`, transparent.                          |
-| `og.png`        | 1200x630 | Rasterized `og.svg`. Use this one for `og:image`.            |
+| `logo.svg`      | 40x40    | Mark alone, pinned light. 2 units of padding on every side. |
+| `logo-dark.svg` | 40x40    | Same geometry, pinned dark.                                 |
+| `lockup.svg`    | 512x72   | Mark plus wordmark, adapts to colour scheme.                |
+| `og.svg`        | 1200x630 | Social card. Text is set in a system sans stack.            |
+| `logo.png`      | 512x512  | Rasterized `logo.svg`, transparent.                         |
+| `og.png`        | 1200x630 | Rasterized `og.svg`. Use this one for `og:image`.           |
 
 In the lockup the mark is scaled to 72 units of ink (1.6x the cap height, the
-visual mass Octane's flame has against the same cap) and the ink gap to the S is
-24. The mark is translated by -4 to cancel its own padding, so the lockup's box
+visual mass Octane's flame has against the same cap) and the ink gap to the S is 24. The mark is translated by -4 to cancel its own padding, so the lockup's box
 is tight to the ink.
 
 Both `logo.svg` and `logo-dark.svg` declare an element with `id="sg-addr"`, so
