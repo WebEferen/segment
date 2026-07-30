@@ -7,9 +7,8 @@
 		BlinkMacSystemFont,
 		'Segoe UI',
 		sans-serif;
-	color: #15221d;
-	background:
-		radial-gradient(circle at 20% 0%, rgba(107, 226, 164, 0.22), transparent 34rem), #eef4f0;
+	color: #2b2926;
+	background: radial-gradient(circle at 20% 0%, rgba(233, 8, 38, 0.16), transparent 34rem), #f7f2ec;
 	font-synthesis: none;
 }
 
@@ -55,7 +54,7 @@ footer {
 
 .eyebrow {
 	margin: 0 0 0.45rem;
-	color: #168354;
+	color: #d90722;
 	font-size: 0.75rem;
 	font-weight: 800;
 	letter-spacing: 0.12em;
@@ -114,8 +113,8 @@ h1 {
 }
 
 .composer input:focus {
-	border-color: #2baa6d;
-	box-shadow: 0 0 0 4px rgba(43, 170, 109, 0.12);
+	border-color: #e90826;
+	box-shadow: 0 0 0 4px rgba(233, 8, 38, 0.12);
 }
 
 .composer button {
@@ -143,8 +142,8 @@ h1 {
 }
 
 .filters button.active {
-	background: #ddf4e7;
-	color: #12643c;
+	background: #fee3e7;
+	color: #b80019;
 	font-weight: 700;
 }
 

@@ -5,4 +5,5 @@ playground/dist/
 docs/.vitepress/cache/
 docs/.vitepress/dist/
 benchmarks/segment-state/.build/
+rulesync.local.jsonc
 .DS_Store

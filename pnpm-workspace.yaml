@@ -3,6 +3,10 @@ packages:
 
 allowBuilds:
   esbuild: true
+  # Its optional postinstall only refreshes the public-suffix list from the
+  # network. The package already ships that data, so installs stay offline.
+  tldjs: false
 
 minimumReleaseAgeExclude:
   - octane@0.1.21
+  - rulesync@16.3.0

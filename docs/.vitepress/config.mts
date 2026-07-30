@@ -1,5 +1,10 @@
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitepress';
+
+const packageJson = JSON.parse(
+	readFileSync(fileURLToPath(new URL('../../package.json', import.meta.url)), 'utf8'),
+) as { version: string };
 
 export default defineConfig({
 	lang: 'en-US',
@@ -41,9 +46,10 @@ export default defineConfig({
 		nav: [
 			{ text: 'Guide', link: '/guide/getting-started' },
 			{ text: 'Advanced', link: '/advanced' },
+			{ text: 'Playground', link: '/try' },
 			{ text: 'Internals', link: '/core' },
 			{
-				text: '0.0.1',
+				text: packageJson.version,
 				items: [
 					{ text: 'Releases', link: 'https://github.com/WebEferen/segment/releases' },
 					{ text: 'npm', link: 'https://www.npmjs.com/package/segment-state' },
@@ -57,6 +63,7 @@ export default defineConfig({
 					{ text: 'Getting started', link: '/guide/getting-started' },
 					{ text: 'State model', link: '/guide/state-model' },
 					{ text: 'Advanced', link: '/advanced' },
+					{ text: 'Playground', link: '/try' },
 				],
 			},
 			{

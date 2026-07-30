@@ -3,6 +3,17 @@ name: Publish to npm
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to publish (for example, v0.1.0)
+        required: true
+        type: string
+      dry_run:
+        description: Validate the package without publishing it to npm
+        required: true
+        default: true
+        type: boolean
 
 concurrency:
   group: npm-publish
@@ -12,15 +23,18 @@ permissions:
   contents: read
   id-token: write
 
+env:
+  RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag }}
+
 jobs:
   publish:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Check out release
+      - name: Check out release tag
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ env.RELEASE_TAG }}
 
       - name: Install pnpm
         uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
@@ -33,9 +47,12 @@ jobs:
           package-manager-cache: false
 
       - name: Verify release tag
-        env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
+          if ! git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"; then
+            echo "$RELEASE_TAG is not an existing Git tag." >&2
+            exit 1
+          fi
+
           package_version="$(node --print "require('./package.json').version")"
           expected_tag="v${package_version}"
           if [ "$RELEASE_TAG" != "$expected_tag" ]; then
@@ -46,7 +63,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # npm invokes prepublishOnly, which runs the full suite and verifies the
-      # packed tarball in a clean offline consumer before publishing.
-      - name: Publish package
+      # npm invokes prepublishOnly in both modes. It runs the full suite and
+      # verifies the packed tarball in a clean offline consumer.
+      - name: Validate package without publishing
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        run: npm publish --dry-run --access public
+
+      - name: Publish package to npm
+        if: ${{ github.event_name == 'release' || !inputs.dry_run }}
         run: npm publish --access public

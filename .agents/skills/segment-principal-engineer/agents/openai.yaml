@@ -1,0 +1,6 @@
+interface:
+  display_name: Segment Principal Engineer
+  short_description: Design and review durable Segment changes
+  default_prompt: Use $segment-principal-engineer to design and review this Segment change.
+policy:
+  allow_implicit_invocation: true

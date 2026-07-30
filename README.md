@@ -22,7 +22,7 @@
 	·
 	<a href="https://webeferen.github.io/segment/advanced">Advanced guide</a>
 	·
-	<a href="https://github.com/WebEferen/segment/tree/main/playground">Playground</a>
+	<a href="https://webeferen.github.io/segment/playground/">Playground</a>
 </p>
 
 > [!WARNING]
@@ -298,6 +298,7 @@ or request client—it coordinates application state around those systems.
 | [Getting started](https://webeferen.github.io/segment/guide/getting-started) | Installation, first store, subscriptions, and transactions. |
 | [State model](https://webeferen.github.io/segment/guide/state-model)         | Cells, branches, segments, lists, derivations, and actions. |
 | [Advanced guide](https://webeferen.github.io/segment/advanced)               | Resources, Octane, SSR, hydration, ports, and guarantees.   |
+| [Playground](https://webeferen.github.io/segment/try)                        | Embedded interactive store and a full-screen application.   |
 | [Core internals](https://webeferen.github.io/segment/core)                   | Trie design, commit protocol, complexity, and measurements. |
 | [Release guide](https://webeferen.github.io/segment/releasing)               | Maintainer release and trusted publishing workflow.         |
 
@@ -312,6 +313,23 @@ Run the interactive example with `pnpm playground`, or build it with
 `pnpm playground:build`. The playground consumes the package through `workspace:*`;
 `pnpm pack:check` additionally installs the real tarball in a clean offline consumer
 to catch missing files or broken exports.
+
+Agent guidance is maintained once in `.rulesync/` and generated for Codex, Claude
+Code, Cursor, and GitHub Copilot. After changing a rule or skill, run
+`pnpm agents:generate`; `pnpm check` verifies that all committed agent files remain
+in sync. The included skills cover architecture and API design, performance audits,
+and systematic regression hunting.
+
+Changes to the published API or runtime behavior should include a changeset:
+
+```sh
+pnpm changeset
+```
+
+After changesets reach `main`, GitHub Actions maintains a reviewable version PR that
+updates `package.json` and `CHANGELOG.md`. Documentation and CI-only changes do not
+need a release entry. See the [release guide](https://webeferen.github.io/segment/releasing)
+for version policy, dry runs, and trusted npm publishing.
 
 ## License
 

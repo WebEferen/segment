@@ -1,0 +1,6 @@
+interface:
+  display_name: Segment Bug Hunter
+  short_description: Find and prove Segment regressions systematically
+  default_prompt: Use $segment-bug-hunter to reproduce and isolate this Segment defect.
+policy:
+  allow_implicit_invocation: true

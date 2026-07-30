@@ -1,0 +1,12 @@
+{
+	"$schema": "https://github.com/dyoshikawa/rulesync/releases/latest/download/config-schema.json",
+	"targets": {
+		"codexcli": ["rules", "skills"],
+		"claudecode": ["rules", "skills"],
+		"cursor": ["rules", "skills"],
+		"copilot": ["rules", "skills"],
+	},
+	"outputRoots": ["."],
+	"delete": true,
+	"verbose": false,
+}

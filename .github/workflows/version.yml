@@ -1,0 +1,50 @@
+name: Version packages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .changeset/**
+      - .github/workflows/version.yml
+      - package.json
+      - pnpm-lock.yaml
+  workflow_dispatch:
+
+concurrency:
+  group: version-packages
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+
+      - name: Install Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Create or update version pull request
+        uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          version: pnpm version:packages
+          commit: "chore: version packages"
+          title: "chore: version packages"
+          createGithubReleases: false

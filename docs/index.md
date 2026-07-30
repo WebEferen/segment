@@ -76,5 +76,7 @@ The [getting-started guide](/guide/getting-started) builds a store from plain va
 shows how refs and transactions work, and introduces keyed segments. Continue with
 the [state model](/guide/state-model) or go directly to the
 [advanced guide](/advanced) for resources, SSR, ports, and lifecycle guarantees.
+When you want to interact with the model first, open the
+[browser playground](/try).
 
 </section>

@@ -1,0 +1,6 @@
+interface:
+  display_name: Segment Performance Auditor
+  short_description: Audit Segment latency, work, and memory
+  default_prompt: Use $segment-performance-auditor to measure and improve this Segment hot path.
+policy:
+  allow_implicit_invocation: true

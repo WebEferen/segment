@@ -8,7 +8,9 @@ on:
       - assets/**
       - docs/**
       - package.json
+      - playground/**
       - pnpm-lock.yaml
+      - scripts/build-docs.mjs
       - src/core/**
   workflow_dispatch:
 
