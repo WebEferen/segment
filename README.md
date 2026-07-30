@@ -48,6 +48,16 @@ tarball, installs it in a clean temporary consumer, and verifies the public expo
 before anything is published. Run that packaging smoke test directly with
 `pnpm pack:check`.
 
+## Releasing
+
+Publishing is driven by `.github/workflows/publish.yml`. Configure `segment-state`
+on npm with a GitHub Actions trusted publisher for organization `WebEferen`,
+repository `segment`, workflow `publish.yml`, and the `npm publish` action. Then bump
+the package version on `main` and publish a GitHub Release tagged with the matching
+`v<version>` value. The workflow validates that tag, runs the package lifecycle
+checks, and publishes through short-lived OIDC credentials with automatic
+provenance; no long-lived `NPM_TOKEN` is required.
+
 ## Why this exists
 
 Every other store identifies a value by a **reference to an object** you created.
