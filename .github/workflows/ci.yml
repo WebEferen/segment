@@ -39,16 +39,11 @@ jobs:
         if: ${{ github.event_name != 'pull_request' }}
         run: pnpm changeset:status
 
-      - name: Require release intent for publishable changes
+      - name: Require a changeset for every pull request
         if: ${{ github.event_name == 'pull_request' && !startsWith(github.head_ref, 'changeset-release/') }}
         env:
           BASE_REF: origin/${{ github.base_ref }}
-        run: |
-          if git diff --quiet "$BASE_REF...HEAD" -- src package.json tsconfig.build.json; then
-            echo "No publishable package changes detected; a changeset is not required."
-          else
-            pnpm changeset:check "$BASE_REF"
-          fi
+        run: pnpm changeset:check "$BASE_REF"
 
       - name: Validate package, playground, and documentation
         run: pnpm check

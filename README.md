@@ -395,16 +395,25 @@ Code, Cursor, and GitHub Copilot. After changing a rule or skill, run
 in sync. The included skills cover architecture and API design, performance audits,
 and systematic regression hunting.
 
-Changes to the published API or runtime behavior should include a changeset:
+Every ordinary pull request must include release intent. Use a semantic changeset
+for published API or runtime behavior:
 
 ```sh
 pnpm changeset
 ```
 
+For documentation, tests, examples, benchmarks, CI, dependency maintenance, or
+other non-release work, add an empty changeset instead:
+
+```sh
+pnpm changeset --empty
+```
+
 After changesets reach `main`, GitHub Actions maintains a reviewable version PR that
-updates `package.json` and `CHANGELOG.md`. Documentation and CI-only changes do not
-need a release entry. See the [release guide](https://webeferen.github.io/segment/releasing)
-for version policy, dry runs, and trusted npm publishing.
+updates `package.json` and `CHANGELOG.md`. The generated `changeset-release/*` PR is
+the only exception to the CI rule because it consumes those files. See the
+[release guide](https://webeferen.github.io/segment/releasing) for version policy,
+dry runs, and trusted npm publishing.
 
 ## License
 

@@ -49,7 +49,8 @@ only `contents: write` and `pull-requests: write` to its single job.
 
 ## Describe a package change
 
-For a pull request that changes the published API or runtime behavior, run:
+Every ordinary pull request must declare its release intent. For a change to the
+published API or runtime behavior, run:
 
 ```sh
 pnpm changeset
@@ -57,16 +58,20 @@ pnpm changeset
 
 Select `segment-state`, choose the bump, and write a user-facing summary. Use
 `patch` for backwards-compatible fixes and `minor` for new API or breaking changes
-while Segment is pre-1.0. Documentation, examples, tests, benchmarks, and CI-only
-changes do not need a changeset.
+while Segment is pre-1.0.
+
+For documentation, examples, tests, benchmarks, CI, dependency maintenance, and
+other work that should not release the package, add an explicit empty changeset:
+
+```sh
+pnpm changeset --empty
+```
 
 Use `pnpm changeset:status` to inspect the pending release locally.
 
-CI also validates release intent on pull requests. Changes under `src`, changes to
-published package metadata, and build-output configuration must include a changeset.
-Documentation, examples, tests, benchmarks, and CI-only changes remain exempt. If a
-matched file changes without affecting the published package, record that deliberate
-exception with `pnpm changeset --empty`.
+CI validates this on every pull request. The generated `changeset-release/*` version
+PR is the only exception because applying a version consumes and removes its pending
+changesets.
 
 ## Prepare the version
 

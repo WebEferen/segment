@@ -1,7 +1,7 @@
 # Changesets
 
-Every pull request that changes the published API or runtime behavior should carry
-a changeset. Run:
+Every ordinary pull request must carry a changeset. For a change to the published
+API or runtime behavior, run:
 
 ```sh
 pnpm changeset
@@ -14,9 +14,17 @@ user-facing summary. While the project is on `0.x`, use:
 - `minor` for new API or breaking pre-1.0 changes;
 - `major` when preparing the stable `1.0.0` release.
 
-Documentation, tests, benchmarks, examples, and CI-only changes do not need a
-changeset. After changesets reach `main`, GitHub Actions creates or updates the
-`chore: version packages` pull request. Merging that PR consumes the pending
-changesets, updates `package.json`, and writes `CHANGELOG.md`.
+For documentation, tests, benchmarks, examples, CI, dependency maintenance, or any
+other change that should not release the package, add an explicit empty changeset:
+
+```sh
+pnpm changeset --empty
+```
+
+CI enforces this policy for every pull request except the generated
+`changeset-release/*` version PR, which consumes the pending changesets. After
+changesets reach `main`, GitHub Actions creates or updates the
+`chore: version packages` pull request. Merging that PR consumes the pending files,
+updates `package.json`, and writes `CHANGELOG.md`.
 
 See the [release guide](../docs/releasing.md) for the complete maintainer flow.

@@ -43,8 +43,11 @@ surface small enough to evolve.
    and lifecycle properties; do not encode noisy timing thresholds in unit tests.
 4. Run the narrow test while iterating, then `pnpm check`. Run `pnpm pack:check` for
    exports, entry points, package metadata, or release changes.
-5. Add `pnpm changeset` for a published API or runtime behavior change. Docs, tests,
-   examples, benchmarks, and CI-only changes do not require a bump.
+5. Every ordinary pull request must contain a changeset. Run `pnpm changeset` and
+   select a semantic bump for a published API or runtime behavior change. Run
+   `pnpm changeset --empty` for docs, tests, examples, benchmarks, CI, or other
+   non-release work. A generated `changeset-release/*` version PR is the only
+   exception because it consumes the pending changesets.
 
 ## Maintainability bar
 

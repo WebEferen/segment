@@ -62,5 +62,8 @@ Check these dimensions explicitly:
 3. Run `pnpm pack:check` when exports, packaging, metadata, or release behavior moves.
 4. Invoke `segment-performance-auditor` for a hot-path or memory-sensitive change and
    `segment-bug-hunter` for high-risk state transitions or race conditions.
-5. Add a changeset for published API or runtime behavior. Report validation evidence,
-   compatibility impact, and unresolved trade-offs clearly.
+5. Before opening a pull request, add a release changeset for published API or
+   runtime behavior, or an empty changeset for non-release work. The generated
+   `changeset-release/*` version PR is the only exception because it consumes those
+   files. Report validation evidence, compatibility impact, and unresolved
+   trade-offs clearly.
