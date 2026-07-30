@@ -1,7 +1,15 @@
 {
-  "name": "@webeferen/segment",
+  "name": "segment-state",
   "version": "0.0.1",
   "description": "Framework-agnostic, path-addressed state with O(observed) memory and transactional commits.",
+  "keywords": [
+    "state-management",
+    "state",
+    "store",
+    "typescript",
+    "fine-grained-reactivity",
+    "octane"
+  ],
   "author": {
     "name": "Dominic Gannaway",
     "email": "dg@domgan.com"

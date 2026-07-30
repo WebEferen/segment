@@ -1,4 +1,4 @@
-import { useStatus, useDraft, useValue } from '@webeferen/segment/octane';
+import { useStatus, useDraft, useValue } from 'segment-state/octane';
 import { Suspense, ErrorBoundary } from 'octane';
 import type { AppStore } from './store.js';
 

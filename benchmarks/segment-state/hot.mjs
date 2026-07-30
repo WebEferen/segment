@@ -1,4 +1,4 @@
-// The hot paths of @webeferen/segment, isolated so an optimization has a number.
+// The hot paths of segment-state, isolated so an optimization has a number.
 //
 //   node benchmarks/segment-state/hot.mjs            all cases
 //   node benchmarks/segment-state/hot.mjs 4          one case, as JSON

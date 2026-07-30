@@ -1,8 +1,13 @@
 # Segment brand assets
 
-Visual identity for `@webeferen/segment`. The mark was originally designed beside
+Visual identity for `segment-state`. The mark was originally designed beside
 Octane; its ink, red, stroke weight, and letterforms preserve that visual lineage
 after Segment became a standalone package.
+
+The generated `segment-state-logo.png` is the README emblem: its interlocking
+paths show many structural addresses while the red route isolates one targeted
+update. The compact vector assets below remain available for favicons, one-colour
+printing, and adaptive light/dark surfaces.
 
 ## The mark
 
@@ -91,14 +96,15 @@ on a photograph.
 
 ## Files
 
-| File            | Size     | Notes                                                       |
-| --------------- | -------- | ----------------------------------------------------------- |
-| `logo.svg`      | 40x40    | Mark alone, pinned light. 2 units of padding on every side. |
-| `logo-dark.svg` | 40x40    | Same geometry, pinned dark.                                 |
-| `lockup.svg`    | 512x72   | Mark plus wordmark, adapts to colour scheme.                |
-| `og.svg`        | 1200x630 | Social card. Text is set in a system sans stack.            |
-| `logo.png`      | 512x512  | Rasterized `logo.svg`, transparent.                         |
-| `og.png`        | 1200x630 | Rasterized `og.svg`. Use this one for `og:image`.           |
+| File                     | Size     | Notes                                                       |
+| ------------------------ | -------- | ----------------------------------------------------------- |
+| `logo.svg`               | 40x40    | Mark alone, pinned light. 2 units of padding on every side. |
+| `logo-dark.svg`          | 40x40    | Same geometry, pinned dark.                                 |
+| `lockup.svg`             | 512x72   | Mark plus wordmark, adapts to colour scheme.                |
+| `og.svg`                 | 1200x630 | Social card. Text is set in a system sans stack.            |
+| `logo.png`               | 512x512  | Rasterized `logo.svg`, transparent.                         |
+| `og.png`                 | 1200x630 | Rasterized `og.svg`. Use this one for `og:image`.           |
+| `segment-state-logo.png` | 479x479  | Generated README emblem on a dark ground.                   |
 
 In the lockup the mark is scaled to 72 units of ink (1.6x the cap height, the
 visual mass Octane's flame has against the same cap) and the ink gap to the S is 24. The mark is translated by -4 to cancel its own padding, so the lockup's box

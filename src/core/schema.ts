@@ -19,7 +19,7 @@ import type {
  * happens to contain a field named `kind` would be misread as a marker, silently
  * producing a store with a missing subtree.
  */
-export const DEF: unique symbol = Symbol('@webeferen/segment.def');
+export const DEF: unique symbol = Symbol('segment-state.def');
 
 export const BRANCH = 0;
 export const CELL = 1;
@@ -217,7 +217,7 @@ function isValue(shape: unknown): boolean {
 }
 
 function fail(message: string): never {
-	throw new Error(`[@webeferen/segment] ${message}`);
+	throw new Error(`[segment-state] ${message}`);
 }
 
 function join(parent: string, segmentName: string): string {

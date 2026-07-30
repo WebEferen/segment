@@ -1,6 +1,6 @@
 # Segment against the other stores
 
-Compares `@webeferen/segment` with four popular stores pinned as development
+Compares `segment-state` with four popular stores pinned as development
 dependencies: jotai, zustand, valtio, and redux. All five are driven the way their
 own documentation says to subscribe to one field, with no extra machinery the
 library does not ship.

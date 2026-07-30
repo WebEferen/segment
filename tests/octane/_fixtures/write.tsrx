@@ -1,4 +1,4 @@
-import { useValue } from '@webeferen/segment/octane';
+import { useValue } from 'segment-state/octane';
 import type { AppStore } from './store.js';
 
 export function ThemeToggle({ app }: { app: AppStore }) @{

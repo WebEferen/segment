@@ -1,6 +1,6 @@
 # The Segment core
 
-`@webeferen/segment` (also available as `@webeferen/segment/core`) is the whole state
+`segment-state` (also available as `segment-state/core`) is the whole state
 engine with no renderer attached. It
 imports neither Octane nor the DOM, and that claim is machine-checked: the core has
 its own `tsconfig.core.json` with no `dom` lib, so a DOM reference that creeps in
