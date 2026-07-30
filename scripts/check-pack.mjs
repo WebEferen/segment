@@ -8,17 +8,29 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const manifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
 const staging = await mkdtemp(join(tmpdir(), 'segment-state-pack-'));
 
-function run(command, args, cwd) {
+function run(command, args, cwd, options = {}) {
 	const result = spawnSync(command, args, {
 		cwd,
 		encoding: 'utf8',
 		stdio: 'inherit',
+		...options,
 	});
 
 	if (result.error !== undefined) throw result.error;
 	if (result.status !== 0) {
 		throw new Error(`${command} ${args.join(' ')} exited with status ${result.status}`);
 	}
+}
+
+function isolatedNpmEnvironment() {
+	const environment = { ...process.env };
+
+	for (const name of Object.keys(environment)) {
+		if (name.toLowerCase().startsWith('npm_')) delete environment[name];
+	}
+
+	delete environment.INIT_CWD;
+	return environment;
 }
 
 try {
@@ -40,6 +52,11 @@ try {
 		'npm',
 		[
 			'install',
+			// npm lifecycle scripts inherit config that points back to the package
+			// being published. Use an explicit target and a clean npm environment so
+			// this nested install cannot escape the temporary consumer directory.
+			'--prefix',
+			consumer,
 			'--offline',
 			'--ignore-scripts',
 			'--no-audit',
@@ -48,6 +65,7 @@ try {
 			archive,
 		],
 		consumer,
+		{ env: isolatedNpmEnvironment() },
 	);
 
 	const smoke = `
