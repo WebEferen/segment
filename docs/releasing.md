@@ -26,6 +26,20 @@ Configure a trusted publisher for the package on npm with these values:
 | Workflow             | `publish.yml` |
 | Environment          | leave empty   |
 
+An authenticated maintainer using npm `11.10.0+` can create the same connection
+from the repository root:
+
+```sh
+npm trust github segment-state \
+  --file publish.yml \
+  --repo WebEferen/segment \
+  --allow-publish
+```
+
+npm requires account-level 2FA and opens a browser confirmation before creating or
+listing trusted publishers. The package already exists, so no bootstrap publish is
+required.
+
 The workflow requests an OpenID Connect identity with `id-token: write`. npm checks
 that identity against the trusted-publisher record before accepting the package.
 
