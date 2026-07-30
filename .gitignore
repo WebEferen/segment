@@ -2,5 +2,7 @@ node_modules/
 dist/
 coverage/
 playground/dist/
+docs/.vitepress/cache/
+docs/.vitepress/dist/
 benchmarks/segment-state/.build/
 .DS_Store

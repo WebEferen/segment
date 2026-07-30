@@ -1,5 +1,6 @@
-// The README's examples, typechecked. Documentation that has never been compiled
-// drifts, and the first snippet a reader tries is the worst place to be wrong.
+// The README and guide examples, typechecked. Documentation that has never been
+// compiled drifts, and the first snippet a reader tries is the worst place to be
+// wrong.
 import {
 	action,
 	cell,
@@ -15,13 +16,16 @@ type Equal<X, Y> =
 	(<T>() => T extends X ? 1 : 2) extends <T>() => T extends Y ? 1 : 2 ? true : false;
 type Expect<T extends true> = T;
 
-// ── "That is the whole setup" ───────────────────────────────────────────────
+// ── "Quick start" ───────────────────────────────────────────────────────────
 
-const quick = createStore({ theme: 'light', count: 0 });
+const quick = createStore({ todos: segment({ title: '', completed: false }) });
 const q = quick.state;
-export type _QuickCell = Expect<Equal<ReturnType<typeof quick.get<number>>, number>>;
-quick.set(q.count, 1);
-quick.update(q.count, (n) => n + 1);
+q.todos.replaceAll({ docs: { title: 'Ship the documentation', completed: false } });
+const completed = q.todos.at('docs').completed;
+export type _QuickCell = Expect<Equal<ReturnType<typeof quick.get<boolean>>, boolean>>;
+const stop = quick.observe(completed, () => void quick.get(completed));
+quick.update(completed, (value) => !value, 'todo/toggle');
+stop();
 
 // ── "Declaring a store" ─────────────────────────────────────────────────────
 

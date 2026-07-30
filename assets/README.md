@@ -18,15 +18,16 @@ palette is ink `#F4EEE8` and live red `#FF415A`.
 
 ## Files
 
-| File                     | Size     | Notes                                                    |
-| ------------------------ | -------- | -------------------------------------------------------- |
-| `logo.svg`               | 64x64    | Transparent light-surface mark.                          |
-| `logo-dark.svg`          | 64x64    | Transparent dark-surface mark, with identical geometry.  |
-| `lockup.svg`             | 512x72   | Mark plus wordmark; adapts to the reader's color scheme. |
-| `logo.png`               | 512x512  | Transparent raster of `logo.svg`.                        |
-| `segment-state-logo.png` | 512x512  | README-compatible copy of `logo.png`.                    |
-| `og.svg`                 | 1200x630 | Editable social card source using the same mark.         |
-| `og.png`                 | 1200x630 | Raster Open Graph image.                                 |
+| File                       | Size     | Notes                                                    |
+| -------------------------- | -------- | -------------------------------------------------------- |
+| `logo.svg`                 | 64x64    | Transparent light-surface mark.                          |
+| `logo-dark.svg`            | 64x64    | Transparent dark-surface mark, with identical geometry.  |
+| `lockup.svg`               | 512x72   | Mark plus wordmark; adapts to the reader's color scheme. |
+| `logo.png`                 | 512x512  | Transparent raster of `logo.svg`.                        |
+| `segment-state-logo.png`   | 512x512  | README-compatible copy of `logo.png`.                    |
+| `og.svg`                   | 1200x630 | Editable social card source using the same mark.         |
+| `og.png`                   | 1200x630 | Raster Open Graph image.                                 |
+| `benchmark-comparison.png` | 2402x442 | Recorded comparison used in the README and docs.         |
 
 `og.svg` uses the dark-surface colors so the mark remains unchanged geometrically
 while retaining sufficient contrast on the card background.
@@ -44,4 +45,5 @@ so the mark remains pixel-identical across the set.
 - Use `logo-dark.svg` on dark surfaces.
 - Use `lockup.svg` when the mark and name must travel together.
 - Use `og.png` as the social preview without resizing or recompressing it.
+- Keep `benchmark-comparison.png` linked to the reproducible benchmark methodology.
 - Keep clear space equal to roughly one route thickness on every side.

@@ -33,7 +33,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Validate package and playground
+      - name: Validate package, playground, and documentation
         run: pnpm check
 
       - name: Verify package contents

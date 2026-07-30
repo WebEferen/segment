@@ -6,8 +6,9 @@ imports neither Octane nor the DOM, and that claim is machine-checked: the core 
 its own `tsconfig.core.json` with no `dom` lib, so a DOM reference that creeps in
 fails typecheck.
 
-This document is the detailed reference. The [README](../README.md) is the short
-version.
+This document is the detailed implementation reference. Start with the
+[getting-started guide](./guide/getting-started.md) for the public model or the
+[advanced guide](./advanced.md) for resources, SSR, and ports.
 
 ---
 

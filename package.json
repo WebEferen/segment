@@ -28,7 +28,7 @@
   "bugs": {
     "url": "https://github.com/WebEferen/segment/issues"
   },
-  "homepage": "https://github.com/WebEferen/segment#readme",
+  "homepage": "https://webeferen.github.io/segment/",
   "main": "./dist/core/index.js",
   "module": "./dist/core/index.js",
   "types": "./dist/core/index.d.ts",
@@ -65,13 +65,16 @@
     "test:octane": "vitest run --project segment-octane",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs",
     "playground": "pnpm build && pnpm --dir playground dev",
     "playground:build": "pnpm build && pnpm --dir playground build",
     "benchmark:build": "node benchmarks/segment-state/build.mjs",
     "benchmark": "pnpm benchmark:build && node --expose-gc --import tsx benchmarks/segment-state/run.mjs",
     "benchmark:hot": "pnpm benchmark:build && node benchmarks/segment-state/hot.mjs",
     "pack:check": "node scripts/check-pack.mjs",
-    "check": "pnpm format:check && pnpm typecheck && pnpm test && pnpm build && pnpm playground:build",
+    "check": "pnpm format:check && pnpm typecheck && pnpm test && pnpm build && pnpm playground:build && pnpm docs:build",
     "prepack": "pnpm build",
     "prepublishOnly": "pnpm check && pnpm pack:check"
   },
@@ -97,6 +100,7 @@
     "typescript": "5.9.3",
     "valtio": "2.3.2",
     "vite": "8.1.5",
+    "vitepress": "1.6.4",
     "vitest": "4.1.10",
     "zustand": "5.0.14"
   }

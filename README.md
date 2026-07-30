@@ -1,412 +1,276 @@
 <p align="center">
-	<img src="./assets/segment-state-logo.png" alt="Segment logo" width="240" />
+	<img src="https://raw.githubusercontent.com/WebEferen/segment/main/assets/lockup.svg" alt="Segment" width="520" />
 </p>
 
-<p align="center">Framework-agnostic state, addressed by path.</p>
+<p align="center">
+	<strong>State you can address.</strong><br />
+	A framework-agnostic, type-safe state engine built around structural paths,
+	targeted subscriptions, and atomic commits.
+</p>
 
-# segment-state
+<p align="center">
+	<a href="https://github.com/WebEferen/segment/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/WebEferen/segment/ci.yml?branch=main&amp;style=flat-square&amp;label=CI" alt="CI status" /></a>
+	<a href="https://github.com/WebEferen/segment/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-5B5751?style=flat-square" alt="MIT license" /></a>
+	<a href="https://nodejs.org/"><img src="https://img.shields.io/badge/Node.js-%E2%89%A522-5B5751?style=flat-square" alt="Node.js 22 or newer" /></a>
+	<a href="https://webeferen.github.io/segment/"><img src="https://img.shields.io/badge/docs-GitHub%20Pages-E90826?style=flat-square" alt="Documentation" /></a>
+</p>
 
-```ts
-import { createStore } from 'segment-state';
+<p align="center">
+	<a href="https://webeferen.github.io/segment/">Documentation</a>
+	·
+	<a href="https://webeferen.github.io/segment/guide/getting-started">Getting started</a>
+	·
+	<a href="https://webeferen.github.io/segment/advanced">Advanced guide</a>
+	·
+	<a href="https://github.com/WebEferen/segment/tree/main/playground">Playground</a>
+</p>
 
-export const store = createStore({ theme: 'light', count: 0 });
-export const s = store.state;
+> [!WARNING]
+> Segment is experimental and currently follows `0.x` versioning. Its core behavior
+> is tested, but public APIs may still change before `1.0`.
 
-store.observe(s.count, () => console.log('count:', store.get(s.count)));
-store.update(s.count, (count) => count + 1);
+## What is Segment?
+
+Segment is a small state engine for applications where data has a natural address:
+records, documents, caches, server payloads, and large keyed collections.
+
+Many state APIs make a selector, atom object, or store snapshot the identity at the
+call site. Segment instead gives every declared value a structural path:
+
+```text
+users/42/profile/name
 ```
 
-That is the whole core setup. A plain value is a piece of state, every value has a
-structural address, and subscriptions wake only for the address that changed.
+That path can be read, written, observed, serialized, or passed to an external
+service without sharing an in-memory object reference. The same addressing model
+powers fine-grained subscriptions, transaction logs, server hydration, resources,
+and adapters.
 
-The default export and the compatibility `segment-state/core` entry point import
-neither a UI framework nor the DOM, so they run in a browser, Node.js, and a worker.
-The optional Octane hooks live at `segment-state/octane`.
+|                          | What it means                                                                 |
+| ------------------------ | ----------------------------------------------------------------------------- |
+| **Structural paths**     | Any declared value can be reached through a typed ref or a plain path string. |
+| **Targeted updates**     | A write wakes observers of the affected address, not the whole store.         |
+| **Atomic commits**       | Multiple writes land together; a thrown transaction is rolled back.           |
+| **O(observed) memory**   | Large segments materialize nodes only for addresses currently being watched.  |
+| **Async state built in** | Resources support caching, cancellation, staleness, live data, and save-back. |
+| **Runtime independent**  | The core imports neither a UI framework nor the DOM.                          |
 
-> **Status: experimental.** APIs still move.
+## Benchmark
 
-## Install
+<p align="center">
+	<img src="https://raw.githubusercontent.com/WebEferen/segment/main/assets/benchmark-comparison.png" alt="Segment benchmark comparison against Valtio, Jotai, Redux, and Zustand across targeted subscription work, observer churn, write time, memory, and mount lifecycle" width="1200" />
+</p>
+
+The suite combines exact work counts with a 20,000-record workload, 2,000 targeted
+writes, and a 200-row mounted window. Callback, selector, and retained-entry counts
+are the primary results; elapsed time and heap measurements are machine-specific
+and should be read directionally.
+
+Run it locally with `pnpm benchmark`. The full
+[benchmark methodology](https://github.com/WebEferen/segment/blob/main/benchmarks/segment-state/README.md)
+documents the fixture, library versions, measurement caveats, and the commands used
+to compare a candidate change against an identical baseline. The comparison
+describes design trade-offs, not a universal ranking for every application shape.
+
+## Installation
 
 ```sh
 npm install segment-state
 ```
 
+```sh
+pnpm add segment-state
+```
+
+Segment is ESM-only. Node.js `22+` is required for Node runtimes and development
+tooling. Browser and worker builds do not depend on Node or the DOM.
+
+For the optional Octane adapter, install the peer dependency too:
+
+```sh
+pnpm add segment-state octane
+```
+
+## Quick start
+
+Declare the shape of the state once. Segment turns it into a typed tree of
+addresses while keeping values inside the store.
+
+```ts
+import { createStore, segment } from 'segment-state';
+
+export const store = createStore({
+	todos: segment({ title: '', completed: false }),
+});
+
+export const s = store.state;
+
+s.todos.replaceAll({
+	docs: { title: 'Ship the documentation', completed: false },
+	release: { title: 'Publish the package', completed: false },
+});
+
+const completed = s.todos.at('docs').completed;
+
+const stop = store.observe(completed, () => {
+	console.log('completed:', store.get(completed));
+});
+
+store.update(completed, (value) => !value, 'todo/toggle');
+
+console.log(completed.path); // todos/docs/completed
+stop();
+```
+
+There is no provider and no hidden global store:
+
+1. `createStore()` creates one isolated state container.
+2. `store.state` exposes typed refs; it does not expose mutable state objects.
+3. `store.get()` reads once, while `store.observe()` subscribes.
+4. Every write becomes a named commit that adapters and external services can see.
+
+### Atomic updates
+
+Use `store.act()` when several writes must become visible together:
+
+```ts
+store.act((tx) => {
+	tx.set(s.todos.at('docs').completed, true);
+	tx.set(s.todos.at('release').completed, true);
+}, 'release/complete');
+```
+
+Observers see one commit and never an intermediate state. If the callback throws,
+none of its writes are published.
+
+## Define the state model
+
+Ordinary values are ordinary writable state. Markers are only needed when the
+value itself cannot describe the behavior you want.
+
+| Declaration        | Use it for                                                           |
+| ------------------ | -------------------------------------------------------------------- |
+| `count: 0`         | A writable value with an inferred type.                              |
+| `profile: { … }`   | A branch whose fields each receive an address.                       |
+| `cell<T>(initial)` | A narrowed union or a plain object stored as one value.              |
+| `segment({ … })`   | A large keyed collection with observation-scaled memory.             |
+| `list({ … })`      | An addressable array whose items have addressable fields.            |
+| `derived<T>()`     | A cached synchronous value computed from other addresses.            |
+| `resource<T>()`    | Async state with load, save, cancellation, staleness, and live data. |
+| `action()`         | One synchronous, atomic state transition.                            |
+| `task()`           | An async flow made of several atomic transitions.                    |
+
+Computed slots and callable actions receive their implementations through
+`.with()`. A store containing only plain data does not need this step.
+
+```ts
+import { action, createStore, derived } from 'segment-state';
+
+export const counter = createStore({
+	count: 0,
+	doubled: derived<number>(),
+	increment: action<[by?: number]>(),
+}).with((s) => ({
+	doubled: (get) => get(s.count) * 2,
+	increment: (tx, by = 1) => tx.update(s.count, (count) => count + by),
+}));
+
+counter.state.increment(2);
+console.log(counter.get(counter.state.doubled)); // 4
+```
+
+See the [state model guide](https://webeferen.github.io/segment/guide/state-model) for
+collections, refs, derivations, actions, and tasks. Resources, SSR, ports, and
+persistence boundaries live in the
+[advanced guide](https://webeferen.github.io/segment/advanced).
+
+## Read and write from anywhere
+
+The core API is deliberately small:
+
+| Operation                | Purpose                                                |
+| ------------------------ | ------------------------------------------------------ |
+| `store.get(ref)`         | Read a value without subscribing.                      |
+| `store.observe(ref, cb)` | Subscribe to one address or subtree.                   |
+| `store.set(ref, value)`  | Replace one writable value.                            |
+| `store.update(ref, fn)`  | Apply one read-modify-write transition.                |
+| `store.patch(ref, data)` | Update selected fields as one commit.                  |
+| `store.act(fn)`          | Group multiple reads and writes atomically.            |
+| `store.ref(path)`        | Resolve an address from a structural path string.      |
+| `store.commits(cb)`      | Subscribe to the serializable stream of state changes. |
+
+This makes the same store usable from UI code, tests, workers, sockets, persistence
+layers, and developer tools.
+
+## Octane integration
+
+`segment-state/octane` is the optional render-aware adapter. It has no provider and
+keeps subscriptions scoped to the address read by a component.
+
+```tsx
+import { useValue } from 'segment-state/octane';
+
+export function TodoRow({ id }: { id: string }) @{
+	const [completed, setCompleted] = useValue(s.todos.at(id).completed);
+
+	<button onClick={() => setCompleted(!completed)}>
+		{completed ? 'Done' : 'Mark complete'}
+	</button>
+}
+```
+
+- `useValue(ref)` reads writable, derived, branch, and resource addresses.
+- `useStatus(ref)` exposes resource state without suspending.
+- `useDraft(ref)` keeps a local edit and publishes it on demand.
+
+The core remains usable without Octane through `get`, `observe`, commit streams, and
+ports. No React or Vue adapter is bundled today.
+
+## Where Segment fits
+
+Segment is a strong fit when:
+
+- a large keyed dataset has a much smaller visible or observed window;
+- state must be addressed outside the component that created it;
+- several writes must be atomic and attributable;
+- server payloads, workers, sockets, or devtools need one serializable protocol;
+- async values should share the same address and lifecycle model as local state.
+
+For a small amount of component-local UI state, the state primitive built into your
+renderer is usually simpler. Segment is also intentionally not a router, database,
+or request client—it coordinates application state around those systems.
+
 ## Package entry points
 
-| Import                 | Purpose                                 |
-| ---------------------- | --------------------------------------- |
-| `segment-state`        | Framework-agnostic state engine         |
-| `segment-state/core`   | Compatibility alias for the same engine |
-| `segment-state/octane` | Optional Octane hooks                   |
+| Import                 | Contents                                   |
+| ---------------------- | ------------------------------------------ |
+| `segment-state`        | Framework-agnostic core.                   |
+| `segment-state/core`   | Compatibility alias for the same core.     |
+| `segment-state/octane` | Core plus the optional Octane integration. |
 
-Run the included interactive example with `pnpm playground`, or create a production
-build with `pnpm playground:build`.
+## Documentation
 
-The playground consumes `segment-state` through `workspace:*`, so it never depends
-on an already-published version. `pnpm publish` runs the full check, creates a real
-tarball, installs it in a clean temporary consumer, and verifies the public exports
-before anything is published. Run that packaging smoke test directly with
-`pnpm pack:check`.
+| Resource                                                                     | What it covers                                              |
+| ---------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| [Documentation site](https://webeferen.github.io/segment/)                   | Searchable guide and API concepts.                          |
+| [Getting started](https://webeferen.github.io/segment/guide/getting-started) | Installation, first store, subscriptions, and transactions. |
+| [State model](https://webeferen.github.io/segment/guide/state-model)         | Cells, branches, segments, lists, derivations, and actions. |
+| [Advanced guide](https://webeferen.github.io/segment/advanced)               | Resources, Octane, SSR, hydration, ports, and guarantees.   |
+| [Core internals](https://webeferen.github.io/segment/core)                   | Trie design, commit protocol, complexity, and measurements. |
+| [Release guide](https://webeferen.github.io/segment/releasing)               | Maintainer release and trusted publishing workflow.         |
 
-## Releasing
+## Development
 
-Publishing is driven by `.github/workflows/publish.yml`. Configure `segment-state`
-on npm with a GitHub Actions trusted publisher for organization `WebEferen`,
-repository `segment`, workflow `publish.yml`, and the `npm publish` action. Then bump
-the package version on `main` and publish a GitHub Release tagged with the matching
-`v<version>` value. The workflow validates that tag, runs the package lifecycle
-checks, and publishes through short-lived OIDC credentials with automatic
-provenance; no long-lived `NPM_TOKEN` is required.
-
-## Why this exists
-
-Every other store identifies a value by a **reference to an object** you created.
-Segment identifies it by a **structural path** (`users/42/name`). Three things
-follow that no reference-based store can offer:
-
-- A service outside your components (a socket, a worker, a persistence layer,
-  devtools) can read, write, and subscribe **without holding any JavaScript
-  reference** into your state.
-- The commit stream and the server payload are serializable by construction, so
-  SSR, partial prerendering, and incremental regeneration are one mechanism rather
-  than three plugins.
-- **Memory is O(observed), not O(data).** A million records with 200 rows on
-  screen keeps 402 live nodes. A node-per-field design needs 11,000,002.
-
-## Declaring a store
-
-A raw value declares state and supplies its initial value. You only reach for a
-marker where a value cannot carry the information.
-
-```ts
-import { createStore, action, cell, derived, list, resource, segment, task } from 'segment-state';
-
-type UserId = string & { readonly __brand: 'UserId' };
-
-export const store = createStore({
-	// Plain values. No marker needed.
-	ui: { query: '', page: 1, compact: false },
-
-	// Markers, only where a value cannot say it:
-	theme: cell<'light' | 'dark'>('light'), // a narrowed union
-	users: segment<UserId>()({
-		// lots of records, keyed
-		name: '',
-		avatar: resource<string>(), // fetched
-		initials: derived<string>(), // computed
-	}),
-	cart: {
-		items: list({ sku: '', qty: 1 }), // each item's fields addressable
-		total: derived<number>(),
-		add: action<[sku: string]>(), // one commit
-		checkout: task<[coupon?: string]>(), // async, several commits
-	},
-}).with((s) => ({
-	users: {
-		avatar: ({ key, signal }) => fetch(`/api/users/${key}`, { signal }).then((r) => r.json()),
-		initials: (get) => get(s.users.at('x' as UserId).name).slice(0, 2),
-	},
-	cart: {
-		total: (get) => get(s.cart.items.at(0).qty),
-		add: (tx, sku) => tx.set(s.cart.items.at(0).sku, sku),
-		checkout: async ({ act, get, signal }, coupon) => {
-			act((tx) => tx.set(s.ui.page, 1));
-			await fetch('/api/checkout', { body: JSON.stringify({ coupon }), signal });
-		},
-	},
-}));
-
-export const s = store.state;
+```sh
+pnpm install
+pnpm check
 ```
 
-`.with()` supplies the implementations for everything the shape declared as
-computed. It is a separate call for a measured reason: a callback written **inside**
-the shape literal cannot see the type being inferred from that literal, because
-TypeScript collapses it to `never`. In `.with()` the shape is already resolved, so
-`s` is in scope and no callback needs a `root` parameter. Its argument is
-exhaustive by construction, so forgetting a derivation is a compile error.
+Run the interactive example with `pnpm playground`, or build it with
+`pnpm playground:build`. The playground consumes the package through `workspace:*`;
+`pnpm pack:check` additionally installs the real tarball in a clean offline consumer
+to catch missing files or broken exports.
 
-A store of plain data never calls `.with()` at all.
+## License
 
-### The whole vocabulary
-
-Two of these three words never appear in your code, and that is the point.
-
-| What you write        | Who answers a read               | Writable               |
-| --------------------- | -------------------------------- | ---------------------- |
-| `theme: 'light'`      | the store's memory               | yes                    |
-| `derived<T>()`        | your function, on demand         | no, it is computed     |
-| `resource<T>()`       | the network, cached by the store | through `save()`       |
-| `ui: { … }`           | the addresses below it, together | through `patch()`      |
-| `segment({ … })`      | the same, for a lot of data      | through `replaceAll()` |
-| `action()` / `task()` | nothing, you call these          | no                     |
-
-## Octane adapter
-
-The optional adapter keeps the core independent from Octane while adding render-aware
-subscriptions, Suspense integration, and drafts.
-
-```tsx
-import { useDraft, useStatus, useValue } from 'segment-state/octane';
-
-const [theme, setTheme] = useValue(s.theme); //         read and write
-const [total] = useValue(s.cart.total); //               derived: the setter is `never`
-const [user] = useValue(s.users.at(id)); //              a whole record
-const [avatar] = useValue(s.users.at(id).avatar); //     fetched: WAITS
-const [[a, b]] = useValue([refA, refB]); //              two fetches, one wait
-const [label] = useValue(store, (get, s) => …); //       computed here, per call site
-
-const status = useStatus(s.users.at(id).avatar); //      the same, without waiting
-const [name, setName, save] = useDraft(s.users.at(id).name); // edit, then publish
-```
-
-`useValue` reads **any** address, so you never have to know what kind of thing you
-are reading before you can read it. A fetched address makes the component wait: it
-does not render, the nearest `<Suspense>` shows its fallback, and a failure reaches
-the nearest `@catch`. Pass an array to wait for several at once, which starts every
-load before anything waits so the requests overlap.
-
-You never combine these on one address. `useStatus` is the opt-out when you would
-rather draw the loading and error states yourself, and `useDraft` is for an edit that
-should wait for a Save button.
-
-The setter's **type** is `never` for anything the store computes, so taking it is a
-compile error rather than a runtime surprise.
-
-Actions need no hook. They are plain functions on the tree:
-
-```tsx
-<button onClick={() => s.cart.add('sku-1')}>Add</button>
-<button onClick={() => s.cart.checkout('SUMMER')}>Pay</button>
-```
-
-No provider, and no context on the read path: a ref knows which store it belongs
-to. On the server you create a store per request and pass that request's `s` down;
-a module-global store would be shared between concurrent requests, which is a
-correctness bug rather than a style question.
-
-## A component that fetches, and then writes back
-
-```ts
-// store.ts
-export const store = createStore({
-	users: segment({ profile: resource<Profile>() }),
-}).with(() => ({
-	users: {
-		profile: {
-			load: ({ key, signal }) => fetch(`/api/users/${key}`, { signal }).then((r) => r.json()),
-			save: ({ key, value, signal }) =>
-				fetch(`/api/users/${key}`, { method: 'PUT', body: JSON.stringify(value), signal }),
-		},
-	},
-}));
-export const s = store.state;
-```
-
-```tsx
-// Profile.tsrx
-function Body({ id }: { id: string }) @{
-	const [profile] = useValue(s.users.at(id).profile);
-	const status = useStatus(s.users.at(id).profile);
-	const [draft, setDraft] = useState(profile.name);
-
-	<div>
-		<h2>{profile.name as string}</h2>
-		<input value={draft as string} onInput={(e) => setDraft(e.currentTarget.value)} />
-		<button onClick={() => void store.save(s.users.at(id).profile, { ...profile, name: draft })}>
-			{'Save'}
-		</button>
-		@if (status.status === 'error') { <p>{'Could not save; the old name is back.'}</p> }
-	</div>
-}
-
-export function Profile({ id }: { id: string }) @{
-	<Suspense fallback={<p>{'Loading…'}</p>}>
-		<Body id={id} />
-	</Suspense>
-}
-```
-
-No `useEffect`, no `isLoading`, no cache key, no invalidation. The fetch starts when
-the component reads it, the result is cached at `users/<id>/profile`, and a second
-component reading the same id shares it. `save` applies the new name immediately and
-puts the old one back if the round trip rejects.
-
-## Without `.with()`: everything as exported functions
-
-`.with()` is optional. Declare only data, and make every computed thing an ordinary
-export:
-
-```ts
-export const store = createStore({
-	ui: { query: '', page: 1 },
-	users: segment({ name: '', votes: 0 }),
-});
-export const s = store.state;
-
-// A derivation: created once, at module scope.
-export const queryLength = store.derive((get) => get(s.ui.query).length);
-
-// A fetched value: call it with arguments to get an address.
-export const fetchUserName = store.resourceOf<string, [id: string]>(
-	async ({ args: [id], signal }) => (await fetch(`/api/users/${id}/name`, { signal })).text(),
-);
-
-// A getter and a setter, for use OUTSIDE a render.
-export function getUserName(id: string): string {
-	return store.get(s.users.at(id).name);
-}
-export function setUserName(id: string, name: string): void {
-	store.set(s.users.at(id).name, name);
-}
-
-// An async flow: an ordinary async function. Each write is its own commit.
-export async function publish(label: string): Promise<string> {
-	store.set(s.ui.page, 1);
-	const response = await fetch('/api/publish', { method: 'POST', body: label });
-	return response.text();
-}
-```
-
-```tsx
-const [name] = useValue(s.users.at(id).name); //   in a render: subscribes
-const [length] = useValue(queryLength);
-const [fetched] = useValue(fetchUserName(id)); //  waits
-<button onClick={() => setUserName(id, 'Ada')}>{'Rename'}</button>;
-```
-
-No source string is passed to `store.set`: in development the commit is named after
-the calling function, so devtools shows `setUserName` without you writing it. Pass
-one explicitly when you want a different name, or when you need names in production,
-where the automatic one is not derived.
-
-What you give up by skipping `.with()`: actions are not discoverable on `s.`, and an
-async function has no automatic `status` / `result` / `error` addresses the way a
-declared `task()` does. `store.resourceOf` addresses are also numbered by creation
-order, so they are fine within a session but should not be persisted.
-
-## Reading and writing outside a component
-
-```ts
-store.get(s.theme);
-store.get(store.ref('users/u1/name')); //  by path, as an outside service would
-
-store.set(s.theme, 'dark');
-store.update(s.ui.page, (n) => n + 1);
-store.patch(s.users.at(id), { name: 'Ada' }); //  the keys you give; the rest untouched
-store.act((tx) => {
-	//                                             several writes, ONE commit
-	tx.set(s.ui.query, 'ada');
-	tx.set(s.ui.page, 1);
-}, 'search'); //                                   named in the commit stream
-```
-
-`store.*` is for OUTSIDE a render: an event handler, module code, a port, a test. It
-reads a value but subscribes to nothing, so a component that called it would never
-re-render. Inside a render use the hooks, which are the only thing that can
-subscribe, wait, and clean up.
-
-Actions are the only writers, and one action is one commit: no observer sees an
-intermediate state, and **a throw rolls the entire write set back**. An optimistic
-`save()` is the same machinery, restored if the round trip never confirms.
-
-`store.patch` is deliberately one operation with one meaning: the keys you provide
-are written, the rest are left alone. So "add a field" and "overwrite the record"
-are the same call, with no merge-or-replace flag to get wrong.
-
-## Fetching with arguments
-
-Arguments become **path segments**, so `s.search('ada', 2)` addresses
-`search/ada/2`. That is why the cache is per argument set with no separate cache
-key, and why staleness, dehydration, and ports need no special case for it.
-
-```ts
-search: resource<Result[], [q: string, page: number]>(),
-// .with():
-search: async ({ args: [q, page], signal }) =>
-	(await fetch(`/search?q=${q}&page=${page}`, { signal })).json(),
-```
-
-```tsx
-const [hits] = useValue(s.search('ada', 2));
-```
-
-Arguments must be primitives, because they are stringified into the path.
-
-If the loader has no slot in the schema, `store.resourceOf` gives it one:
-
-```ts
-export const search = store.resourceOf(async ({ args: [q] }) => fetchSearch(q));
-// in a component: const [hits] = useValue(search('ada'));
-```
-
-When a parameter is a **filter** rather than an identity, it is usually better as
-state: put it in a cell, read it through `get`, and moving it marks the resource
-stale automatically, so a refetch can never be forgotten.
-
-## Server rendering
-
-One flat path-to-value payload covers all three shapes.
-
-```ts
-const payload = store.dehydrate({ at: Date.now() }); //  plain SSR
-const shell = store.dehydrate({ include: ['ui/**'] }); // the static half, for PPR
-
-store.hydrate(payload); //                               adopt, one commit
-store.hydrate(payload, { maxAge: 60_000 }); //           past the window: ready AND stale
-```
-
-A resource adopted from a payload is ready **without fetching**, so the client does
-not repeat the server's work.
-
-For a payload that arrived over the wire, pass `allow`:
-
-```ts
-const result = store.hydrate(response, { allow: ['cart/**'], source: 'rpc:reprice' });
-result.rejected; //  paths the server tried to write and was not allowed to
-```
-
-Without it, a response can write any address in the store, including local UI state
-the server has no business touching.
-
-## Ports
-
-A port is how anything outside participates, addressing state by path so nothing
-has to hand out object references.
-
-```ts
-store.attach({
-	name: 'socket',
-	attach(ctx) {
-		const stop = ctx.watch('users/*/name', (path) => socket.send(path, ctx.read(path)));
-		socket.on('patch', (path, value) => ctx.write(path, value));
-		return stop;
-	},
-});
-```
-
-`*` matches one segment, `**` matches one or more trailing segments. A port that
-throws is isolated and detached rather than breaking every future commit.
-`store.commits(cb)` gives the same stream without a port.
-
-## What is deliberately unspecified
-
-Rely on these and a future release will break you:
-
-- the order observers are notified in
-- whether any particular node is materialized (that is the whole point)
-- how many times a derivation runs, so it must be pure
-- whether an unobserved subtree retains node objects
-- the numbering of `commit.id`
-
-Guaranteed instead: read-your-writes inside an action, one commit per action,
-rollback on throw, an `Object.is`-equal write being a no-op, and path stability for
-a given schema within a major version. Ref **identity** is not guaranteed through a
-dynamic segment; compare `ref.path`, because interning an unbounded key space is
-the leak this design exists to avoid.
-
-## Further reading
-
-- [`docs/core.md`](./docs/core.md) covers the agnostic core in detail: the trie,
-  the commit protocol, the complexity of every operation, and the two measurements
-  that constrain the implementation.
+[MIT](https://github.com/WebEferen/segment/blob/main/LICENSE) © Michal Makowski
