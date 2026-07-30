@@ -1,16 +1,19 @@
-name: Publish to npm
+name: Publish release
 
 on:
-  release:
-    types: [published]
+  push:
+    branches: [main]
+    paths:
+      - package.json
   workflow_dispatch:
     inputs:
-      tag:
-        description: Existing release tag to publish (for example, v0.1.0)
+      ref:
+        description: Branch, tag, or commit to publish
         required: true
+        default: main
         type: string
       dry_run:
-        description: Validate the package without publishing it to npm
+        description: Validate the package without publishing, tagging, or creating a release
         required: true
         default: true
         type: boolean
@@ -20,21 +23,19 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: read
+  contents: write
   id-token: write
-
-env:
-  RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag }}
 
 jobs:
   publish:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Check out release tag
+      - name: Check out release commit
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          ref: ${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.sha }}
 
       - name: Install pnpm
         uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
@@ -46,29 +47,114 @@ jobs:
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
 
-      - name: Verify release tag
+      - name: Determine release
+        id: release
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
-          if ! git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"; then
-            echo "$RELEASE_TAG is not an existing Git tag." >&2
-            exit 1
+          package_name="$(node --print "require('./package.json').name")"
+          package_version="$(node --print "require('./package.json').version")"
+          release_tag="v${package_version}"
+          release_commit="$(git rev-parse HEAD)"
+
+          if [ "$EVENT_NAME" = "push" ]; then
+            previous_version="$(git show "$BEFORE_SHA:package.json" | node --input-type=module --eval "let json = ''; for await (const chunk of process.stdin) json += chunk; console.log(JSON.parse(json).version)")"
+            if [ "$previous_version" = "$package_version" ]; then
+              echo "package.json changed without a version bump; nothing to publish."
+              echo "run=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
           fi
 
-          package_version="$(node --print "require('./package.json').version")"
-          expected_tag="v${package_version}"
-          if [ "$RELEASE_TAG" != "$expected_tag" ]; then
-            echo "Release tag $RELEASE_TAG does not match package version $package_version (expected $expected_tag)." >&2
-            exit 1
-          fi
+          echo "package_name=$package_name" >> "$GITHUB_OUTPUT"
+          echo "package_version=$package_version" >> "$GITHUB_OUTPUT"
+          echo "release_commit=$release_commit" >> "$GITHUB_OUTPUT"
+          echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
+          echo "run=true" >> "$GITHUB_OUTPUT"
 
       - name: Install dependencies
+        if: ${{ steps.release.outputs.run == 'true' }}
         run: pnpm install --frozen-lockfile
 
-      # npm invokes prepublishOnly in both modes. It runs the full suite and
-      # verifies the packed tarball in a clean offline consumer.
       - name: Validate package without publishing
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
-        run: npm publish --dry-run --access public
+        if: ${{ steps.release.outputs.run == 'true' && github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        run: npm publish --dry-run --access public --tag latest
 
-      - name: Publish package to npm
-        if: ${{ github.event_name == 'release' || !inputs.dry_run }}
-        run: npm publish --access public
+      - name: Inspect npm registry
+        id: registry
+        if: ${{ steps.release.outputs.run == 'true' && (github.event_name == 'push' || !inputs.dry_run) }}
+        env:
+          PACKAGE_NAME: ${{ steps.release.outputs.package_name }}
+          PACKAGE_VERSION: ${{ steps.release.outputs.package_version }}
+        run: |
+          npm view "$PACKAGE_NAME" versions --json > "$RUNNER_TEMP/npm-versions.json"
+
+          if node --input-type=module --eval "import fs from 'node:fs'; const versions = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); process.exit((Array.isArray(versions) ? versions : [versions]).includes(process.argv[2]) ? 0 : 1)" "$RUNNER_TEMP/npm-versions.json" "$PACKAGE_VERSION"; then
+            echo "$PACKAGE_NAME@$PACKAGE_VERSION is already published; continuing with tag and GitHub Release verification."
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "$PACKAGE_NAME@$PACKAGE_VERSION is not published yet."
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # prepublishOnly runs the complete suite and verifies the real tarball in a
+      # clean offline consumer. OIDC comes from this workflow's trusted publisher.
+      - name: Publish package as latest
+        if: ${{ steps.registry.outputs.published == 'false' }}
+        run: npm publish --access public --tag latest
+
+      - name: Verify latest dist-tag
+        if: ${{ steps.registry.outputs.published != '' }}
+        env:
+          PACKAGE_NAME: ${{ steps.release.outputs.package_name }}
+          PACKAGE_VERSION: ${{ steps.release.outputs.package_version }}
+        run: |
+          for attempt in 1 2 3 4 5 6; do
+            latest="$(npm view "$PACKAGE_NAME" dist-tags.latest 2> /dev/null || true)"
+            if [ "$latest" = "$PACKAGE_VERSION" ]; then
+              exit 0
+            fi
+            sleep 5
+          done
+
+          echo "npm latest points to ${latest:-an unknown version} instead of $PACKAGE_VERSION." >&2
+          exit 1
+
+      - name: Create tag and GitHub Release
+        if: ${{ steps.registry.outputs.published != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PACKAGE_VERSION: ${{ steps.release.outputs.package_version }}
+          RELEASE_COMMIT: ${{ steps.release.outputs.release_commit }}
+          RELEASE_TAG: ${{ steps.release.outputs.release_tag }}
+        run: |
+          git fetch --force --tags origin
+
+          if git rev-parse --verify --quiet "refs/tags/$RELEASE_TAG"; then
+            tag_commit="$(git rev-list -n 1 "$RELEASE_TAG")"
+            if [ "$tag_commit" != "$RELEASE_COMMIT" ]; then
+              echo "$RELEASE_TAG points to $tag_commit instead of $RELEASE_COMMIT." >&2
+              exit 1
+            fi
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag --annotate "$RELEASE_TAG" "$RELEASE_COMMIT" --message "$RELEASE_TAG"
+            git push origin "refs/tags/$RELEASE_TAG"
+          fi
+
+          node scripts/release-notes.mjs "$PACKAGE_VERSION" > "$RUNNER_TEMP/release-notes.md"
+
+          if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" \
+              --title "$RELEASE_TAG" \
+              --notes-file "$RUNNER_TEMP/release-notes.md" \
+              --latest
+          else
+            gh release create "$RELEASE_TAG" \
+              --verify-tag \
+              --title "$RELEASE_TAG" \
+              --notes-file "$RUNNER_TEMP/release-notes.md" \
+              --latest
+          fi

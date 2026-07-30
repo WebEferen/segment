@@ -25,6 +25,8 @@ CI enforces this policy for every pull request except the generated
 `changeset-release/*` version PR, which consumes the pending changesets. After
 changesets reach `main`, GitHub Actions creates or updates the
 `chore: version packages` pull request. Merging that PR consumes the pending files,
-updates `package.json`, and writes `CHANGELOG.md`.
+updates `package.json`, writes `CHANGELOG.md`, publishes the resulting version to npm
+under `latest`, and creates its `v<version>` tag and GitHub Release. Treat merging
+the version PR as the final release approval.
 
 See the [release guide](../docs/releasing.md) for the complete maintainer flow.

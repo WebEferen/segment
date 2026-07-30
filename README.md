@@ -411,9 +411,11 @@ pnpm changeset --empty
 
 After changesets reach `main`, GitHub Actions maintains a reviewable version PR that
 updates `package.json` and `CHANGELOG.md`. The generated `changeset-release/*` PR is
-the only exception to the CI rule because it consumes those files. See the
+the only exception to the CI rule because it consumes those files. Merging that PR
+automatically publishes the stable package under npm's `latest` dist-tag, then
+creates the matching `v<version>` tag and GitHub Release. See the
 [release guide](https://webeferen.github.io/segment/releasing) for version policy,
-dry runs, and trusted npm publishing.
+dry runs, recovery, and trusted npm publishing.
 
 ## License
 

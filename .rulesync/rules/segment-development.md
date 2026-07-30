@@ -50,6 +50,10 @@ surface small enough to evolve.
    `pnpm changeset --empty` for docs, tests, examples, benchmarks, CI, or other
    non-release work. A generated `changeset-release/*` version PR is the only
    exception because it consumes the pending changesets.
+6. Never edit package versions, tags, or GitHub Releases by hand. A merged version
+   PR is the release approval: the publish workflow releases the exact merge commit
+   to npm under `latest`, then creates its immutable `v<version>` tag and GitHub
+   Release. Do not merge that PR until the accumulated release is intended to ship.
 
 ## Maintainability bar
 

@@ -1,8 +1,9 @@
 # Releasing Segment
 
 Segment uses Changesets for version decisions and changelog entries, then publishes
-from an immutable Git tag through npm trusted publishing. No long-lived `NPM_TOKEN`
-is stored in GitHub.
+the exact version PR merge commit through npm trusted publishing. After npm accepts
+the package, that commit receives its immutable release tag and GitHub Release. No
+long-lived `NPM_TOKEN` is stored in GitHub.
 
 ## Release model
 
@@ -10,10 +11,11 @@ is stored in GitHub.
 | ------------------------- | --------------------------------- | ------------------------- |
 | Describe a package change | `.changeset/*.md`                 | `pnpm changeset`          |
 | Prepare a version         | `package.json` and `CHANGELOG.md` | Version packages workflow |
-| Publish an artifact       | Git tag `v<version>`              | Publish to npm workflow   |
+| Publish an artifact       | Version PR merge commit           | Publish release workflow  |
 
-Keeping versioning and publishing separate makes the version diff reviewable and
-ensures npm always receives code that can be traced to an immutable tag.
+The version PR keeps the version diff reviewable. Merging it is the final release
+approval: the exact merge commit is published to npm, tagged, and attached to a
+GitHub Release.
 
 ## One-time npm configuration
 
@@ -44,8 +46,9 @@ The workflow requests an OpenID Connect identity with `id-token: write`. npm che
 that identity against the trusted-publisher record before accepting the package.
 
 In GitHub, **Settings → Actions → General → Workflow permissions** must allow
-GitHub Actions to create pull requests. The Version packages workflow still grants
-only `contents: write` and `pull-requests: write` to its single job.
+GitHub Actions to create pull requests. The version workflow grants write access
+only for its version PR. The publish workflow separately grants `id-token: write`
+for npm OIDC and `contents: write` for the release tag and GitHub Release.
 
 ## Describe a package change
 
@@ -83,46 +86,42 @@ the `chore: version packages` pull request. That PR:
 - updates `CHANGELOG.md`;
 - keeps the version shown in the documentation in sync automatically.
 
-Review and merge that PR when its CI checks pass. It changes versions only; it does
-not publish anything.
+Review and merge that PR when its CI checks pass. Merging it is the release approval
+and automatically starts `.github/workflows/publish.yml` because `package.json`
+changed on `main`.
 
-## Publish from a release
+## Automatic publish after merge
 
-1. Confirm the version PR has been merged into `main` and CI is green.
-2. Run the complete local validation if you are preparing the release locally:
+The publish workflow checks out the exact merge commit and:
 
-   ```sh
-   pnpm check
-   pnpm pack:check
-   ```
+- ignores `package.json` edits that did not change its version;
+- runs the complete `prepublishOnly` validation and packed-artifact smoke test;
+- publishes the stable version with `npm publish --tag latest` through OIDC;
+- verifies that npm's `latest` dist-tag points at the released version;
+- creates an annotated `v<version>` tag for the merge commit;
+- creates or repairs the matching GitHub Release from that version's changelog.
 
-3. Create and publish a GitHub Release tagged exactly `v<package-version>`, for
-   example `v0.1.0` for package version `0.1.0`.
-
-Publishing the GitHub Release automatically starts `.github/workflows/publish.yml`.
-The workflow checks out that tag, verifies it against `package.json`, installs the
-locked dependency graph, runs all package checks, and publishes through npm OIDC.
+Tag and GitHub Release creation happen only after npm accepts the package. A failed
+publish therefore cannot advertise an unavailable release.
 
 ## Run or retry manually
 
-Open **Actions → Publish to npm → Run workflow** and provide an existing Git tag.
-The tag must match the package version at that tag. Keep **Validate without
-publishing** enabled for a safe dry run; disable it only when you intend to publish
-or retry a failed release.
+Open **Actions → Publish release → Run workflow**. Leave `ref` set to `main` for
+the current version or select an existing release tag when repairing an older
+release. Keep **Validate without publishing** enabled for a safe dry run. Disable it
+only to retry the actual release.
 
-The manual workflow deliberately refuses branch names and missing tags. It never
-creates a release or changes a version.
+Retries are idempotent. If npm already contains the version, the workflow skips
+`npm publish` and continues by verifying or recreating its missing tag and GitHub
+Release. It refuses to reuse a tag that points at a different commit.
 
 ## What the workflow verifies
 
-`.github/workflows/publish.yml` verifies that the selected ref is a Git tag and that
-it matches `package.json`, then runs `npm publish --access public`. npm invokes
+`.github/workflows/publish.yml` publishes only when the version changed on `main` or
+when a maintainer explicitly disables dry-run during a manual dispatch. npm invokes
 `prepublishOnly`, which runs the full suite and installs the packed tarball into a
-clean offline consumer before publication. Manual dry runs execute the same
-lifecycle with `npm publish --dry-run`.
-
-If the tag and package version differ, the job stops before contacting npm. If any
-validation fails, no package is published.
+clean offline consumer. Manual dry runs execute the same lifecycle with
+`npm publish --dry-run` but never create tags or releases.
 
 ## Inspect the package locally
 
