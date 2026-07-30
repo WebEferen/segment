@@ -55,7 +55,13 @@ export function normalizeResource(impl: unknown, path: string): SchemaNode['reso
 }
 
 /** Names the accessor tree itself occupies on every node. */
-export const RESERVED_KEYS: ReadonlySet<string> = new Set(['path', 'at', 'replaceAll', 'snapshot']);
+export const RESERVED_KEYS: ReadonlySet<string> = new Set([
+	'path',
+	'at',
+	'observe',
+	'replaceAll',
+	'snapshot',
+]);
 
 export const BULK_LIST = 2;
 export const BULK_SEGMENT = 3;

@@ -144,6 +144,12 @@ type IsCell<S> = [S] extends [AnyDef]
 
 export interface SegmentView<K extends string, S> {
 	at(key: K): View<S>;
+	/**
+	 * Subscribe to one key without building its ref: the list-row path. Same
+	 * contract as `store.observe(view.at(key), cb)`, minus the descriptor the
+	 * store-level call would need per row.
+	 */
+	observe(key: K, cb: () => void, options?: ObserveOptions): Dispose;
 	/** O(1) bulk replacement. Only materialized descendants are re-seeded. */
 	replaceAll(next: Record<K, Snapshot<S>>): void;
 	snapshot(): Record<K, Snapshot<S>>;
@@ -152,6 +158,8 @@ export interface SegmentView<K extends string, S> {
 
 export interface ListView<S> {
 	at(index: number): View<S>;
+	/** Subscribe to one index without building its ref. See `SegmentView.observe`. */
+	observe(index: number, cb: () => void, options?: ObserveOptions): Dispose;
 	readonly path: string;
 }
 

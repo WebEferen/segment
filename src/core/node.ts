@@ -1,5 +1,14 @@
 import type { SchemaNode } from './schema.js';
 
+/** What a derived node remembered from its last evaluation. */
+export interface DerivedCache {
+	/** The addresses read during the evaluation, and the values they held. */
+	deps: readonly (readonly string[])[];
+	depValues: readonly unknown[];
+	/** Global version at the last check; an unchanged counter means clean. */
+	checkedAt: number;
+}
+
 export interface Observer {
 	readonly cb: () => void;
 	readonly deep: boolean;
@@ -59,12 +68,15 @@ export interface Node {
 	deepCount: number;
 	/** Eagerly materialized (schema-bounded) nodes are never pruned. */
 	pinned: boolean;
-	/** Derived cache: the addresses read last evaluation and the values they held. */
-	deps: readonly (readonly string[])[] | null;
-	depValues: readonly unknown[] | null;
-	/** Global version at the last evaluation; an unchanged counter means clean. */
-	checkedAt: number;
-	hasCache: boolean;
+	/**
+	 * Derived cache, in ONE lazily-created record rather than four inline fields.
+	 *
+	 * Only a derived node ever has one, and derived nodes are a small minority of
+	 * what gets materialized: a mounted list row is a leaf. Three slots saved per
+	 * node is ~24 bytes and three fewer stores on the mount path's `createNode`,
+	 * for one extra dereference on the derived read path.
+	 */
+	dcache: DerivedCache | null;
 	/**
 	 * The accessor descriptor `.at(key)` handed out for this address, interned so a
 	 * component re-reading its own address does not rebuild it every render. For a
@@ -87,10 +99,7 @@ export function createNode(seg: string, parent: Node | null, schema: SchemaNode)
 		obs: null,
 		deepCount: 0,
 		pinned: false,
-		deps: null,
-		depValues: null,
-		checkedAt: -1,
-		hasCache: false,
+		dcache: null,
 		view: undefined,
 	};
 }
