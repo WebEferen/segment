@@ -1,0 +1,14 @@
+{
+  "//": "The agnostic half, typechecked WITHOUT the DOM lib. This is what makes 'the core runs in a worker and in Node' a machine-checked claim rather than a promise: any DOM reference that creeps into src/core fails here.",
+  "compilerOptions": {
+    "module": "esnext",
+    "lib": ["esnext"],
+    "target": "esnext",
+    "noEmit": true,
+    "moduleResolution": "bundler",
+    "noErrorTruncation": true,
+    "types": ["node"],
+    "strict": true
+  },
+  "include": ["./src/core/"]
+}

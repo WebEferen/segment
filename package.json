@@ -1,0 +1,43 @@
+{
+  "name": "@octanejs/segment",
+  "version": "0.0.1",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "description": "Path-addressed state for Octane. A framework-agnostic core whose memory is O(observed) rather than O(data), with transactional commits that roll back, and ports that let non-Octane services participate by path.",
+  "author": {
+    "name": "Dominic Gannaway",
+    "email": "dg@domgan.com"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/octanejs/octane.git",
+    "directory": "packages/segment"
+  },
+  "main": "src/octane/index.ts",
+  "module": "src/octane/index.ts",
+  "types": "src/octane/index.ts",
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "exports": {
+    ".": "./src/octane/index.ts",
+    "./core": "./src/core/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "octane": "workspace:*",
+    "vitest": "catalog:default"
+  },
+  "peerDependencies": {
+    "octane": "workspace:*"
+  }
+}

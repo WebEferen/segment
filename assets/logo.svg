@@ -1,0 +1,69 @@
+<svg
+	class="sg"
+	xmlns="http://www.w3.org/2000/svg"
+	viewBox="0 0 40 40"
+	width="40"
+	height="40"
+	color="#5B5751"
+	role="img"
+>
+	<title>Segment</title>
+	<!--
+		Pinned to the light-surface palette: ink #5B5751, live #E90826. Every shape
+		still draws with currentColor, so one declaration retargets the whole mark
+		(`style="color: #F4EEE8"` beats the presentation attribute below), and
+		.sg-live is the hook for the one colour that is not currentColor. For a dark
+		surface use logo-dark.svg instead.
+	-->
+	<defs>
+		<!-- One dormant address. 2.4 wide: ~1px at a 16px favicon, so it reads as tone, not detail. -->
+		<rect id="sg-addr" width="2.4" height="2.4" rx="0.7" />
+	</defs>
+	<!--
+		The segment: one opaque container. Stroke 2 of 40 stays ~0.8px at 16px, so
+		the silhouette is the last thing to survive. rx 9 (outer 10, inner 8) is the
+		largest radius that still lets the outer addresses clear the corner arc.
+	-->
+	<rect x="3" y="3" width="34" height="34" rx="9" fill="none" stroke="currentColor" stroke-width="2" />
+	<!--
+		The address space: a 5x5 lattice at pitch 7 (centres 6, 13, 20, 27, 34) with
+		the four corners dropped, so the constellation echoes the container's
+		roundness. 21 addresses exist; 4 of them sit under the live window below and
+		are not drawn dormant.
+	-->
+	<g fill="currentColor">
+		<use href="#sg-addr" x="11.8" y="4.8" />
+		<use href="#sg-addr" x="18.8" y="4.8" />
+		<use href="#sg-addr" x="25.8" y="4.8" />
+		<use href="#sg-addr" x="4.8" y="11.8" />
+		<use href="#sg-addr" x="25.8" y="11.8" />
+		<use href="#sg-addr" x="32.8" y="11.8" />
+		<use href="#sg-addr" x="4.8" y="18.8" />
+		<use href="#sg-addr" x="25.8" y="18.8" />
+		<use href="#sg-addr" x="32.8" y="18.8" />
+		<use href="#sg-addr" x="4.8" y="25.8" />
+		<use href="#sg-addr" x="11.8" y="25.8" />
+		<use href="#sg-addr" x="18.8" y="25.8" />
+		<use href="#sg-addr" x="25.8" y="25.8" />
+		<use href="#sg-addr" x="32.8" y="25.8" />
+		<use href="#sg-addr" x="11.8" y="32.8" />
+		<use href="#sg-addr" x="18.8" y="32.8" />
+		<use href="#sg-addr" x="25.8" y="32.8" />
+	</g>
+	<!--
+		The live window: 15x15 at (9, 9), covering the 2x2 block at grid centres
+		13 and 20. Deliberately off centre (window centre 16.5 against the field's
+		20) because a window is a position, not the middle.
+
+		fill-rule evenodd punches the four observed addresses clean through the
+		opaque block, so they show the surface behind and the mark needs no
+		background colour of its own. Holes are 4x4 (1.67x a dormant address)
+		centred on the same grid points, with 2 of margin and 3 between them.
+	-->
+	<path
+		class="sg-live"
+		fill="#E90826"
+		fill-rule="evenodd"
+		d="M14 9H19A5 5 0 0 1 24 14V19A5 5 0 0 1 19 24H14A5 5 0 0 1 9 19V14A5 5 0 0 1 14 9ZM12.2 11H13.8A1.2 1.2 0 0 1 15 12.2V13.8A1.2 1.2 0 0 1 13.8 15H12.2A1.2 1.2 0 0 1 11 13.8V12.2A1.2 1.2 0 0 1 12.2 11ZM19.2 11H20.8A1.2 1.2 0 0 1 22 12.2V13.8A1.2 1.2 0 0 1 20.8 15H19.2A1.2 1.2 0 0 1 18 13.8V12.2A1.2 1.2 0 0 1 19.2 11ZM12.2 18H13.8A1.2 1.2 0 0 1 15 19.2V20.8A1.2 1.2 0 0 1 13.8 22H12.2A1.2 1.2 0 0 1 11 20.8V19.2A1.2 1.2 0 0 1 12.2 18ZM19.2 18H20.8A1.2 1.2 0 0 1 22 19.2V20.8A1.2 1.2 0 0 1 20.8 22H19.2A1.2 1.2 0 0 1 18 20.8V19.2A1.2 1.2 0 0 1 19.2 18Z"
+	/>
+</svg>

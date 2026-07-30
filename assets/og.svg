@@ -1,0 +1,98 @@
+<svg
+	class="sg"
+	xmlns="http://www.w3.org/2000/svg"
+	viewBox="0 0 1200 630"
+	width="1200"
+	height="630"
+	color="#F4EEE8"
+	role="img"
+>
+	<title>Segment: path-addressed state for Octane</title>
+	<!--
+		Social card, pinned dark. Nothing here adapts: an OG image is rasterized once
+		and served to every surface, so the palette is fixed (ground #1A1614, ink
+		#F4EEE8, live #FF415A).
+	-->
+	<defs>
+		<rect id="sg-addr" width="2.4" height="2.4" rx="0.7" />
+		<!--
+			The card ground is the mark's address space continued past the frame: pitch
+			25.2 is the mark's pitch of 7 at this card's compound scale (2 * 1.8). The
+			cell is cut to 3 rather than the matching 8.64 so the field stays ground and
+			not figure. #332B27 is a solid tint of the ground rather than a transparent
+			ink, so it rasterizes identically everywhere and never lifts text contrast.
+		-->
+		<pattern id="sg-field" width="25.2" height="25.2" patternUnits="userSpaceOnUse">
+			<rect x="11.1" y="11.1" width="3" height="3" rx="0.9" fill="#332B27" />
+		</pattern>
+	</defs>
+	<rect width="1200" height="630" fill="#1A1614" />
+	<rect width="1200" height="630" fill="url(#sg-field)" />
+	<!--
+		The lockup, unchanged, at scale 1.8: mark 129.6, cap height 81. Centred on its
+		own width (512 * 1.8 = 921.6), so x = 139. y = 217 puts the optical centre of
+		the mark, wordmark and tagline together at 314.5 against the card's 315.
+	-->
+	<g transform="translate(139 217) scale(1.8)">
+		<g transform="translate(-4 0) scale(2)">
+			<rect x="3" y="3" width="34" height="34" rx="9" fill="none" stroke="currentColor" stroke-width="2" />
+			<g fill="currentColor">
+				<use href="#sg-addr" x="11.8" y="4.8" />
+				<use href="#sg-addr" x="18.8" y="4.8" />
+				<use href="#sg-addr" x="25.8" y="4.8" />
+				<use href="#sg-addr" x="4.8" y="11.8" />
+				<use href="#sg-addr" x="25.8" y="11.8" />
+				<use href="#sg-addr" x="32.8" y="11.8" />
+				<use href="#sg-addr" x="4.8" y="18.8" />
+				<use href="#sg-addr" x="25.8" y="18.8" />
+				<use href="#sg-addr" x="32.8" y="18.8" />
+				<use href="#sg-addr" x="4.8" y="25.8" />
+				<use href="#sg-addr" x="11.8" y="25.8" />
+				<use href="#sg-addr" x="18.8" y="25.8" />
+				<use href="#sg-addr" x="25.8" y="25.8" />
+				<use href="#sg-addr" x="32.8" y="25.8" />
+				<use href="#sg-addr" x="11.8" y="32.8" />
+				<use href="#sg-addr" x="18.8" y="32.8" />
+				<use href="#sg-addr" x="25.8" y="32.8" />
+			</g>
+			<path
+				class="sg-live"
+				fill="#FF415A"
+				fill-rule="evenodd"
+				d="M14 9H19A5 5 0 0 1 24 14V19A5 5 0 0 1 19 24H14A5 5 0 0 1 9 19V14A5 5 0 0 1 14 9ZM12.2 11H13.8A1.2 1.2 0 0 1 15 12.2V13.8A1.2 1.2 0 0 1 13.8 15H12.2A1.2 1.2 0 0 1 11 13.8V12.2A1.2 1.2 0 0 1 12.2 11ZM19.2 11H20.8A1.2 1.2 0 0 1 22 12.2V13.8A1.2 1.2 0 0 1 20.8 15H19.2A1.2 1.2 0 0 1 18 13.8V12.2A1.2 1.2 0 0 1 19.2 11ZM12.2 18H13.8A1.2 1.2 0 0 1 15 19.2V20.8A1.2 1.2 0 0 1 13.8 22H12.2A1.2 1.2 0 0 1 11 20.8V19.2A1.2 1.2 0 0 1 12.2 18ZM19.2 18H20.8A1.2 1.2 0 0 1 22 19.2V20.8A1.2 1.2 0 0 1 20.8 22H19.2A1.2 1.2 0 0 1 18 20.8V19.2A1.2 1.2 0 0 1 19.2 18Z"
+			/>
+		</g>
+		<g transform="translate(96 13.5)">
+			<g fill="currentColor">
+				<path transform="translate(56 0)" d="M0 0H52.5V10.4H10.4V17.3H29.1V27.7H10.4V34.6H52.5V45H0Z" />
+				<path transform="translate(248.65 0)" d="M0 0H52.5V10.4H10.4V17.3H29.1V27.7H10.4V34.6H52.5V45H0Z" />
+				<path transform="translate(366 0)" d="M0 0H50V10.4H30.2V45H19.8V10.4H0Z" />
+			</g>
+			<g fill="none" stroke="currentColor" stroke-width="10.4">
+				<path d="M47.3 13.85A21.05 8.65 0 1 0 26.25 22.5A21.05 8.65 0 1 1 5.2 31.15" />
+				<path transform="translate(112.5 0)" d="M57.75 5.2H22.5A17.3 17.3 0 1 0 22.5 39.8H52.55V22.5H38" />
+				<path
+					transform="translate(176.25 0)"
+					d="M5.2 45V5.2H18.2A15 15 0 0 1 33.2 20.2M33.2 45V5.2H46.2A15 15 0 0 1 61.2 20.2V45"
+				/>
+				<path transform="translate(306.65 0)" d="M5.2 45V5.2H35.25A17.3 17.3 0 0 1 52.55 22.5V45" />
+			</g>
+		</g>
+	</g>
+	<!--
+		Tagline, left rail aligned to the wordmark (139 + 96 * 1.8). 46px holds up as a
+		thumbnail: at the 300px width a feed renders, it is still 11.5px. #C9BFB5 on
+		#1A1614 is 9.9:1, so it clears AA with room to spare while staying quieter
+		than the wordmark.
+	-->
+	<text
+		x="312"
+		y="400"
+		fill="#C9BFB5"
+		font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif"
+		font-size="46"
+		font-weight="500"
+	>
+		Path-addressed state for Octane
+	</text>
+</svg>
