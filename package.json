@@ -70,9 +70,10 @@
     "benchmark:build": "node benchmarks/segment-state/build.mjs",
     "benchmark": "pnpm benchmark:build && node --expose-gc --import tsx benchmarks/segment-state/run.mjs",
     "benchmark:hot": "pnpm benchmark:build && node benchmarks/segment-state/hot.mjs",
-    "pack:check": "npm pack --dry-run",
+    "pack:check": "node scripts/check-pack.mjs",
     "check": "pnpm format:check && pnpm typecheck && pnpm test && pnpm build && pnpm playground:build",
-    "prepack": "pnpm build"
+    "prepack": "pnpm build",
+    "prepublishOnly": "pnpm check && pnpm pack:check"
   },
   "peerDependencies": {
     "octane": "^0.1.21"
