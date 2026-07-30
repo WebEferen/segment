@@ -7,13 +7,6 @@
 	role="img"
 >
 	<title>Segment</title>
-	<!--
-		The lockup is the asset that gets dropped into a README, where the surface
-		follows the reader, so this one file adapts: the presentation attributes below
-		pin the light palette for renderers with no CSS, and the media query swaps in
-		the dark palette. Override with `style="color: X"` plus a .sg-live rule when
-		the surface is fixed.
-	-->
 	<style>
 		.sg {
 			color: #5b5751;
@@ -30,67 +23,33 @@
 			}
 		}
 	</style>
-	<defs>
-		<rect id="sg-addr" width="2.4" height="2.4" rx="0.7" />
-	</defs>
-	<!--
-		Mark. Its own viewBox carries 2 units of padding on every side, so the ink is
-		36 of 40: scale 2 gives 72 of ink (1.6x the 45 cap height, the same visual mass
-		Octane's flame has against the same cap) and translate -4 pulls the ink flush
-		with x=0 so the lockup's box is tight.
-	-->
-	<g transform="translate(-4 0) scale(2)">
-		<rect x="3" y="3" width="34" height="34" rx="9" fill="none" stroke="currentColor" stroke-width="2" />
-		<g fill="currentColor">
-			<use href="#sg-addr" x="11.8" y="4.8" />
-			<use href="#sg-addr" x="18.8" y="4.8" />
-			<use href="#sg-addr" x="25.8" y="4.8" />
-			<use href="#sg-addr" x="4.8" y="11.8" />
-			<use href="#sg-addr" x="25.8" y="11.8" />
-			<use href="#sg-addr" x="32.8" y="11.8" />
-			<use href="#sg-addr" x="4.8" y="18.8" />
-			<use href="#sg-addr" x="25.8" y="18.8" />
-			<use href="#sg-addr" x="32.8" y="18.8" />
-			<use href="#sg-addr" x="4.8" y="25.8" />
-			<use href="#sg-addr" x="11.8" y="25.8" />
-			<use href="#sg-addr" x="18.8" y="25.8" />
-			<use href="#sg-addr" x="25.8" y="25.8" />
-			<use href="#sg-addr" x="32.8" y="25.8" />
-			<use href="#sg-addr" x="11.8" y="32.8" />
-			<use href="#sg-addr" x="18.8" y="32.8" />
-			<use href="#sg-addr" x="25.8" y="32.8" />
-		</g>
-		<path
-			class="sg-live"
-			fill="#E90826"
-			fill-rule="evenodd"
-			d="M14 9H19A5 5 0 0 1 24 14V19A5 5 0 0 1 19 24H14A5 5 0 0 1 9 19V14A5 5 0 0 1 14 9ZM12.2 11H13.8A1.2 1.2 0 0 1 15 12.2V13.8A1.2 1.2 0 0 1 13.8 15H12.2A1.2 1.2 0 0 1 11 13.8V12.2A1.2 1.2 0 0 1 12.2 11ZM19.2 11H20.8A1.2 1.2 0 0 1 22 12.2V13.8A1.2 1.2 0 0 1 20.8 15H19.2A1.2 1.2 0 0 1 18 13.8V12.2A1.2 1.2 0 0 1 19.2 11ZM12.2 18H13.8A1.2 1.2 0 0 1 15 19.2V20.8A1.2 1.2 0 0 1 13.8 22H12.2A1.2 1.2 0 0 1 11 20.8V19.2A1.2 1.2 0 0 1 12.2 18ZM19.2 18H20.8A1.2 1.2 0 0 1 22 19.2V20.8A1.2 1.2 0 0 1 20.8 22H19.2A1.2 1.2 0 0 1 18 20.8V19.2A1.2 1.2 0 0 1 19.2 18Z"
-		/>
-	</g>
-	<!--
-		Wordmark. Unicase geometric forms on Octane's own metrics: 45 cap height,
-		10.4 stem, 17.3 centreline radius for a full-height shoulder. E, N and T are
-		Octane's glyphs unchanged; S, G and M are drawn to the same rules. Each glyph
-		keeps its own 0-based box and is placed by translate, so the advances stay
-		readable. Total advance is 416, and the counters of the S are 6.9 at their
-		widest: the same aperture as the gaps between the bars of Octane's E.
 
-		Ink gap to the mark is 24 (0.53 cap). S meets x=0 only at the curve of its
-		lower bowl, so it reads as roughly 22, which is the gap a flat-sided letter
-		would want here.
-	-->
+	<!-- The exact same three-path mark as logo.svg, fitted to a 72px box. -->
+	<svg x="0" y="0" width="72" height="72" viewBox="0 0 64 64">
+		<g transform="translate(2 2) scale(.9375)">
+			<path
+				fill="currentColor"
+				d="M4 4H25L36 15H48V22H33L22 11H4ZM52 15H60V22H52Z"
+			/>
+			<path
+				class="sg-live"
+				fill="#E90826"
+				d="M4 24H21L34 37H52V27H60V44H31L18 31H4Z"
+			/>
+			<path
+				fill="currentColor"
+				d="M4 47H18L27 56H48V63H24L15 54H4ZM52 56H60V63H52Z"
+			/>
+		</g>
+	</svg>
+
+	<!-- Unicase wordmark, kept on Octane's geometric metrics. -->
 	<g transform="translate(96 13.5)">
-		<!-- Filled glyphs: E, E, T. -->
 		<g fill="currentColor">
 			<path transform="translate(56 0)" d="M0 0H52.5V10.4H10.4V17.3H29.1V27.7H10.4V34.6H52.5V45H0Z" />
 			<path transform="translate(248.65 0)" d="M0 0H52.5V10.4H10.4V17.3H29.1V27.7H10.4V34.6H52.5V45H0Z" />
 			<path transform="translate(366 0)" d="M0 0H50V10.4H30.2V45H19.8V10.4H0Z" />
 		</g>
-		<!--
-			Stroked glyphs: S, G, M, N. Butt caps give Octane's flat terminals, miter
-			joins give its square corners. The S is two 270 degree elliptical arcs
-			(rx 21.05, ry 8.65) meeting tangentially at the spine.
-		-->
 		<g fill="none" stroke="currentColor" stroke-width="10.4">
 			<path d="M47.3 13.85A21.05 8.65 0 1 0 26.25 22.5A21.05 8.65 0 1 1 5.2 31.15" />
 			<path transform="translate(112.5 0)" d="M57.75 5.2H22.5A17.3 17.3 0 1 0 22.5 39.8H52.55V22.5H38" />

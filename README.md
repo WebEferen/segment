@@ -42,6 +42,12 @@ npm install segment-state
 Run the included interactive example with `pnpm playground`, or create a production
 build with `pnpm playground:build`.
 
+The playground consumes `segment-state` through `workspace:*`, so it never depends
+on an already-published version. `pnpm publish` runs the full check, creates a real
+tarball, installs it in a clean temporary consumer, and verifies the public exports
+before anything is published. Run that packaging smoke test directly with
+`pnpm pack:check`.
+
 ## Why this exists
 
 Every other store identifies a value by a **reference to an object** you created.
