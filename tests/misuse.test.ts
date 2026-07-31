@@ -1,6 +1,7 @@
 // Every wrong thing here must be LOUD. A silent `undefined` from a mistyped
 // path is the footgun this file exists to keep closed.
 import { describe, expect, it } from 'vitest';
+import { dehydrate } from '../src/ssr/index.js';
 import { action, cell, createStore, derived, segment } from '../src/core/index.js';
 import { makeStore } from './fixture.js';
 
@@ -119,7 +120,7 @@ describe('misuse: a function where a declaration belongs', () => {
 		// Documented consequence, asserted so nobody is surprised later: the payload
 		// carries the function reference, which JSON cannot represent.
 		const store = createStore({ compare: cell((a: number) => a) });
-		expect(typeof store.dehydrate().data['compare']).toBe('function');
-		expect(JSON.parse(JSON.stringify(store.dehydrate())).data.compare).toBeUndefined();
+		expect(typeof dehydrate(store).data['compare']).toBe('function');
+		expect(JSON.parse(JSON.stringify(dehydrate(store))).data.compare).toBeUndefined();
 	});
 });

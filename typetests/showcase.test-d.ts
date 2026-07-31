@@ -12,7 +12,9 @@ import {
 	segment,
 	task,
 } from '../src/core/index.js';
-import type { Payload, Port, Ref } from '../src/core/index.js';
+import type { Port, Ref } from '../src/core/index.js';
+import { attachPort } from '../src/ports/index.js';
+import { dehydrate, hydrate, type Payload } from '../src/ssr/index.js';
 
 type UserId = string & { readonly __brand: 'UserId' };
 type Theme = 'light' | 'dark';
@@ -197,11 +199,11 @@ export const everyUser = s.users.snapshot();
 
 // ── SERVER RENDERING ───────────────────────────────────────────────────────
 
-export const full: Payload = store.dehydrate({ at: 1 });
-export const shell: Payload = store.dehydrate({ include: ['ui/**'], at: 1 });
-store.hydrate(full, { maxAge: 60_000 }); //        adopt, marking stale past the window
+export const full: Payload = dehydrate(store, { at: 1 });
+export const shell: Payload = dehydrate(store, { include: ['ui/**'], at: 1 });
+hydrate(store, full, { maxAge: 60_000 }); //        adopt, marking stale past the window
 // From the wire: scope what a response may touch.
-const applied = store.hydrate(shell, { allow: ['ui/**'], source: 'rpc:loadShell' });
+const applied = hydrate(store, shell, { allow: ['ui/**'], source: 'rpc:loadShell' });
 export const rejectedPaths: readonly string[] = applied.rejected;
 
 // ── PORTS: anything outside, addressing by path ─────────────────────────────
@@ -217,5 +219,5 @@ const socketPort: Port = {
 		};
 	},
 };
-export const detach = store.attach(socketPort);
+export const detach = attachPort(store, socketPort);
 export const counts = store.stats();

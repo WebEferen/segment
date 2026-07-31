@@ -10,8 +10,9 @@ import {
 	resource,
 	segment,
 	task,
-	type Payload,
 } from '../src/core/index.js';
+import { attachPort } from '../src/ports/index.js';
+import { dehydrate, hydrate, type Payload } from '../src/ssr/index.js';
 
 type Equal<X, Y> =
 	(<T>() => T extends X ? 1 : 2) extends <T>() => T extends Y ? 1 : 2 ? true : false;
@@ -147,22 +148,22 @@ declare const viewer: SsrViewer;
 const serverStore = createSsrStore();
 serverStore.patch(serverStore.state.page, { title: 'Dashboard', viewer });
 
-const payload = serverStore.dehydrate({ at: 1 });
+const payload = dehydrate(serverStore, { at: 1 });
 export const payloadJson = JSON.stringify(payload).replaceAll('<', '\\u003c');
 
 const clientStore = createSsrStore();
 const parsedPayload = JSON.parse(payloadJson) as Payload;
-const hydrated = clientStore.hydrate(parsedPayload, { maxAge: 60_000 });
+const hydrated = hydrate(clientStore, parsedPayload, { maxAge: 60_000 });
 
 export const appliedPaths: readonly string[] = hydrated.applied;
 
-const shell = serverStore.dehydrate({ include: ['ui/**'] });
-const scoped = clientStore.hydrate(shell, { allow: ['ui/**'], source: 'ssr:shell' });
+const shell = dehydrate(serverStore, { include: ['ui/**'] });
+const scoped = hydrate(clientStore, shell, { allow: ['ui/**'], source: 'ssr:shell' });
 export const rejected: readonly string[] = scoped.rejected;
 
 // ── "Ports" ────────────────────────────────────────────────────────────────
 
-export const detach = store.attach({
+export const detach = attachPort(store, {
 	name: 'socket',
 	attach(ctx) {
 		const stop = ctx.watch('users/*/name', (path) => void ctx.read(path));

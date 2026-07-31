@@ -25,7 +25,7 @@ export default defineConfig({
 					alias: [
 						{
 							find: /^segment-state$/,
-							replacement: resolve(import.meta.dirname, 'src/core/index.ts'),
+							replacement: resolve(import.meta.dirname, 'src/index.ts'),
 						},
 						{
 							find: /^segment-state\/core$/,
@@ -34,6 +34,14 @@ export default defineConfig({
 						{
 							find: /^segment-state\/octane$/,
 							replacement: resolve(import.meta.dirname, 'src/octane/index.ts'),
+						},
+						{
+							find: /^segment-state\/ports$/,
+							replacement: resolve(import.meta.dirname, 'src/ports/index.ts'),
+						},
+						{
+							find: /^segment-state\/ssr$/,
+							replacement: resolve(import.meta.dirname, 'src/ssr/index.ts'),
 						},
 					],
 				},

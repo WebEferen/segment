@@ -336,7 +336,8 @@ machinery. The cost is that arguments must be primitives.
 
 ## 5. Server rendering
 
-`dehydrate()` produces a **flat map** from path to value. That flatness is what
+`dehydrate(store)` from the optional `segment-state/ssr` entry point produces a
+**flat map** from path to value. That flatness is what
 makes plain SSR, partial prerendering, and incremental regeneration one mechanism:
 slicing by pattern and merging two payloads are both trivial on a flat map.
 
@@ -352,7 +353,7 @@ Derivations and actions never appear: one is recomputed on arrival, the other is
 code. A resource **does** appear, because seeding its settled value is how a
 server-rendered payload is adopted without the client refetching.
 
-`hydrate()` applies a payload as **one commit**, so observers and ports see a single
+`hydrate(store, payload)` applies a payload as **one commit**, so observers and ports see a single
 transition rather than a storm. A path the current schema no longer describes is
 skipped, so a deploy can roll forward instead of failing the render.
 
@@ -365,7 +366,7 @@ reserved.
 
 ### Untrusted payloads
 
-`hydrate(payload, { allow })` drops any path the allowlist does not cover and
+`hydrate(store, payload, { allow })` drops any path the allowlist does not cover and
 reports what it dropped. Pass it for anything that came off the wire. Without it a
 server response can write any address in the store, including local UI state the
 server has no business touching.
@@ -373,6 +374,9 @@ server has no business touching.
 ---
 
 ## 6. Ports
+
+Ports are attached with `attachPort(store, port)` from `segment-state/ports`, so
+the watch index and adapter lifecycle are absent from stores that do not use them.
 
 ```ts
 interface PortContext {

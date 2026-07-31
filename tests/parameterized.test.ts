@@ -4,6 +4,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createStore, resource } from '../src/core/index.js';
 import type { LoadContext } from '../src/core/index.js';
+import { dehydrate, hydrate } from '../src/ssr/index.js';
 import { flush } from './resource-fixture.js';
 
 // The loader lives OUTSIDE `.with()`: it is an ordinary exported function, which
@@ -68,10 +69,10 @@ describe('a resource with arguments', () => {
 		const server = makeSearchStore();
 		server.store.resource(server.s.search('ada', 1));
 		await flush();
-		const payload = server.store.dehydrate();
+		const payload = dehydrate(server.store);
 
 		const client = makeSearchStore();
-		client.store.hydrate(payload);
+		hydrate(client.store, payload);
 		const snap = client.store.resource(client.s.search('ada', 1));
 		expect(snap.status).toBe('ready');
 		expect(snap.value).toBe('hits:ada:1');

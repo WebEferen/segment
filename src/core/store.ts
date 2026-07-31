@@ -41,22 +41,17 @@ import {
 	type Node,
 	type Observer,
 } from './node.js';
+import { STORE_INTERNALS, type StoreInternals } from './internal.js';
 import type {
 	Act,
 	AddressKind,
 	Commit,
-	DehydrateOptions,
 	Dispose,
 	Get,
-	HydrateOptions,
-	HydrateResult,
 	Impl,
-	Payload,
 	LiveContext,
 	LoadContext,
 	ObserveOptions,
-	Port,
-	PortContext,
 	Ref,
 	ResourceImpl,
 	ResourceSnapshot,
@@ -210,22 +205,11 @@ interface StagedWrite {
 	readonly ref?: AnyRef;
 }
 
-interface WatchEntry {
-	readonly pattern: readonly string[];
-	readonly cb: (path: string) => void;
-	readonly owner: PortRecord | null;
-}
-
-interface PortRecord {
-	readonly port: Port;
-	detach: (() => void) | null;
-	live: boolean;
-}
-
 export interface StoreStats {
 	/** Live trie nodes. Bounded by what is observed, not by how much data exists. */
 	readonly nodes: number;
 	readonly observedDerived: number;
+	/** Ports currently attached through the optional `segment-state/ports` entry point. */
 	readonly ports: number;
 	/** Transient resource entries: in flight, failed, stale, observed, or pushed to. */
 	readonly resources: number;
@@ -342,26 +326,6 @@ export interface Store<S> {
 	/** Drop a resource's cached value and transient state, aborting any load. */
 	forget<T>(ref: Ref<T>): void;
 
-	/**
-	 * Snapshot the store as a flat path-to-value map, for a server render.
-	 * Derivations and actions are omitted: one is recomputed on arrival, the other
-	 * is code. Use `include` to ship only a static slice, which is what partial
-	 * prerendering needs.
-	 */
-	dehydrate(options?: DehydrateOptions): Payload;
-	/**
-	 * Adopt a payload as ONE commit, so observers and ports see a single
-	 * transition rather than a storm. A resource value that arrives this way is
-	 * `ready` without fetching; past `maxAge` it is `ready` and `stale`, so the
-	 * first paint uses it and the refresh happens behind it.
-	 *
-	 * Also the apply half of a server round trip: a server function returns a
-	 * payload and the client adopts it. **Pass `allow` for anything that came off
-	 * the wire** — without it a response can write any address in the store.
-	 */
-	hydrate(payload: Payload, options?: HydrateOptions): HydrateResult;
-
-	attach(port: Port): Dispose;
 	commits(cb: (commit: Commit) => void): Dispose;
 	stats(): StoreStats;
 }
@@ -482,7 +446,7 @@ export function createStore<S>(shape: S): Store<S> {
 	const evaluating = new Set<string>();
 	const observedDerived = new Set<Node>();
 	const commitSubs = new Set<(commit: Commit) => void>();
-	const watches = new Set<WatchEntry>();
+	let portCount = 0;
 	/**
 	 * A store with no deep observers can return an address's sole listener
 	 * directly instead of walking every ancestor on every write. Flat leaves do
@@ -490,33 +454,6 @@ export function createStore<S>(shape: S): Store<S> {
 	 * address to reach.
 	 */
 	let deepObserverCount = 0;
-	/**
-	 * Watch patterns bucketed by their first LITERAL segment, plus one bucket for
-	 * patterns that start with a wildcard and therefore always apply. Without this,
-	 * a commit costs O(patterns x writes); with it, each write consults only the
-	 * handful of patterns that could possibly match its root.
-	 */
-	const watchIndex = new Map<string, Set<WatchEntry>>();
-	const WATCH_ANY = '\u0000any';
-
-	function indexWatch(entry: WatchEntry): void {
-		const head = entry.pattern[0];
-		const bucket = head === '*' || head === '**' ? WATCH_ANY : head;
-		let set = watchIndex.get(bucket);
-		if (set === undefined) watchIndex.set(bucket, (set = new Set()));
-		set.add(entry);
-	}
-
-	function unindexWatch(entry: WatchEntry): void {
-		const head = entry.pattern[0];
-		const bucket = head === '*' || head === '**' ? WATCH_ANY : head;
-		const set = watchIndex.get(bucket);
-		if (set === undefined) return;
-		set.delete(entry);
-		if (set.size === 0) watchIndex.delete(bucket);
-	}
-	const ports = new Set<PortRecord>();
-
 	// ── Eager materialization of the schema-bounded part ────────────────────
 	// Nodes above every bulk holder are bounded by the schema, so materializing
 	// them once costs a fixed, tiny amount and removes a whole class of
@@ -1012,10 +949,9 @@ export function createStore<S>(shape: S): Store<S> {
 			return;
 		}
 		version++;
-		// The per-write records are only ever read by a commit subscriber or a watch
-		// pattern. With neither attached, building them is allocation nobody reads, so
-		// only the count is kept.
-		const listening = commitSubs.size > 0 || watchIndex.size > 0;
+		// Per-write records are only read by a commit subscriber. With none attached,
+		// building them is allocation nobody reads, so only the count is kept.
+		const listening = commitSubs.size > 0;
 		const applied: Write[] = listening ? [] : NO_WRITES;
 		let changed = 0;
 		const woken = new Set<Observer>();
@@ -1059,24 +995,7 @@ export function createStore<S>(shape: S): Store<S> {
 			if (woken !== null) for (const observer of woken) if (observer.live) observer.cb();
 			// The spread exists so a subscriber that unsubscribes mid-pass cannot skip
 			// the next one. Paying for it with nobody subscribed is pure waste.
-			if (commitSubs.size > 0) for (const sub of [...commitSubs]) isolate(sub, record, null);
-			if (watchIndex.size > 0) {
-				for (const write of record.writes) {
-					const head = write.path.slice(0, indexOfSlash(write.path));
-					const exact = watchIndex.get(head);
-					const any = watchIndex.get(WATCH_ANY);
-					if (exact !== undefined) {
-						for (const entry of [...exact]) {
-							if (matches(entry.pattern, write.path)) isolate(entry.cb, write.path, entry.owner);
-						}
-					}
-					if (any !== undefined) {
-						for (const entry of [...any]) {
-							if (matches(entry.pattern, write.path)) isolate(entry.cb, write.path, entry.owner);
-						}
-					}
-				}
-			}
+			if (commitSubs.size > 0) for (const sub of [...commitSubs]) isolate(sub, record);
 		} finally {
 			notifying = false;
 		}
@@ -1120,42 +1039,18 @@ export function createStore<S>(shape: S): Store<S> {
 
 	/**
 	 * A callback handed to us by a consumer must not be able to break the store.
-	 * A throwing port is detached, because leaving a broken port subscribed means
-	 * every future commit throws in the same place.
 	 */
-	function isolate<A>(fn: (arg: A) => void, arg: A, owner: PortRecord | null): void {
+	function isolate<A>(fn: (arg: A) => void, arg: A): void {
 		try {
 			fn(arg);
 		} catch (error) {
-			if (owner !== null) detachPort(owner);
-			reportError(error, owner);
+			reportError(error);
 		}
 	}
 
-	function reportError(error: unknown, owner: PortRecord | null): void {
-		const where = owner === null ? 'a commit subscriber' : `port "${owner.port.name}"`;
+	function reportError(error: unknown): void {
 		// eslint-disable-next-line no-console
-		console.error(`[segment-state] ${where} threw and was isolated:`, error);
-	}
-
-	function indexOfSlash(path: string): number {
-		const at = path.indexOf('/');
-		return at < 0 ? path.length : at;
-	}
-
-	function matches(pattern: readonly string[], path: string): boolean {
-		const segments = path.split('/');
-		let p = 0;
-		let s = 0;
-		while (p < pattern.length) {
-			const token = pattern[p];
-			if (token === '**') return s < segments.length;
-			if (s >= segments.length) return false;
-			if (token !== '*' && token !== segments[s]) return false;
-			p++;
-			s++;
-		}
-		return s === segments.length;
+		console.error('[segment-state] a commit subscriber threw and was isolated:', error);
 	}
 
 	// ── Resources ───────────────────────────────────────────────────────────
@@ -1485,176 +1380,13 @@ export function createStore<S>(shape: S): Store<S> {
 		}
 	}
 
-	// ── Server rendering ────────────────────────────────────────────────────
-	//
-	// Path addressing is what makes SSR, partial prerendering, and incremental
-	// regeneration one mechanism: the payload is a flat map, so slicing it by
-	// pattern and merging two of them are both trivial.
-
-	function dehydrate(options?: DehydrateOptions): Payload {
-		const include = options?.include?.map((p) => p.split('/'));
-		const exclude = options?.exclude?.map((p) => p.split('/'));
-		const data: Record<string, unknown> = {};
-
-		const wanted = (path: string): boolean => {
-			if (include !== undefined && !include.some((p) => matches(p, path))) return false;
-			if (exclude !== undefined && exclude.some((p) => matches(p, path))) return false;
-			return true;
-		};
-
-		const walk = (schemaNode: SchemaNode, segments: readonly string[], path: string): void => {
-			switch (schemaNode.kind) {
-				case CELL:
-				case RESOURCE: {
-					// Transient run state describes THIS session's attempt, so it never ships.
-					if (schemaNode.transient) return;
-					// A resource's settled value is data; an unfetched one has nothing to ship.
-					const value = readValue(segments, schemaNode);
-					if (value === undefined) return;
-					if (wanted(path)) data[path] = value;
-					return;
-				}
-				case BULK: {
-					// The whole partition travels as one opaque value, which is also how
-					// it is stored, so this costs nothing to produce.
-					const value = readValue(segments, schemaNode);
-					if (value === undefined) return;
-					if (wanted(path)) data[path] = value;
-					return;
-				}
-				case DERIVED:
-				case ACTION:
-					return;
-				case TASK:
-					// Its children are the transient run state, skipped above.
-					return;
-				default: {
-					if (schemaNode.children === null) return;
-					for (const [key, child] of schemaNode.children) {
-						walk(child, [...segments, key], path === '' ? key : `${path}/${key}`);
-					}
-				}
-			}
-		};
-		walk(schema, [], '');
-
-		return options?.at === undefined ? { v: 1, data } : { v: 1, at: options.at, data };
-	}
-
-	function markStaleUnder(schemaNode: SchemaNode, segments: readonly string[], path: string): void {
-		if (schemaNode.kind === RESOURCE) {
-			if (readValue(segments, schemaNode) === undefined) return;
-			ensureResource(path, segments, schemaNode).stale = true;
-			return;
-		}
-		if (schemaNode.kind === BULK) {
-			const bulk = readValue(segments, schemaNode);
-			if (bulk === null || typeof bulk !== 'object') return;
-			for (const key of Object.keys(bulk)) {
-				markStaleUnder(schemaNode.dynamic!, [...segments, key], `${path}/${key}`);
-			}
-			return;
-		}
-		if (schemaNode.children === null) return;
-		for (const [key, child] of schemaNode.children) {
-			markStaleUnder(child, [...segments, key], path === '' ? key : `${path}/${key}`);
-		}
-	}
-
-	function hydrate(payload: Payload, options?: HydrateOptions): HydrateResult {
-		if (payload.v !== 1) {
-			fail(`unsupported payload version ${String(payload.v)}; this build reads version 1`);
-		}
-		const allow = options?.allow?.map((p) => p.split('/'));
-		const writes = new Map<string, StagedWrite>();
-		const bulkPaths: string[] = [];
-		const rejected: string[] = [];
-		const unknown: string[] = [];
-		for (const [path, value] of Object.entries(payload.data)) {
-			// Scope check first: a payload from the wire must not be able to write an
-			// address the call site did not ask for.
-			if (allow !== undefined && !allow.some((p) => matches(p, path))) {
-				rejected.push(path);
-				continue;
-			}
-			const segments = path.split('/');
-			const schemaNode = resolveSchema(schema, segments);
-			// A payload can outlive the schema that produced it. Skipping an unknown
-			// path lets a deploy roll forward instead of failing the whole render.
-			if (schemaNode === null) {
-				unknown.push(path);
-				continue;
-			}
-			if (schemaNode.kind === DERIVED || schemaNode.kind === ACTION || schemaNode.kind === TASK) {
-				rejected.push(path);
-				continue;
-			}
-			if (schemaNode.kind === BULK) {
-				const node = findNode(segments);
-				if (node === null) {
-					unknown.push(path);
-					continue;
-				}
-				node.value = value;
-				bulkPaths.push(path);
-				continue;
-			}
-			writes.set(path, { path, segments, value });
-		}
-
-		const stale =
-			options?.maxAge !== undefined && payload.at !== undefined
-				? Date.now() - payload.at > options.maxAge
-				: false;
-
-		version++;
-		const woken = new Set<Observer>();
-		for (const path of bulkPaths) {
-			const node = findNode(path.split('/'))!;
-			bumpToRoot(node, version);
-			// The whole partition was replaced, so every materialized descendant's
-			// stamp moves with it, exactly as replaceAll stamps them.
-			bumpSubtree(node, version);
-			collectSubtree(node, woken);
-			collectDeep(node, woken);
-		}
-		const applied: Write[] = [];
-		for (const staged of writes.values()) {
-			const schemaNode = resolveSchema(schema, staged.segments)!;
-			const prev = readValue(staged.segments, schemaNode);
-			if (Object.is(prev, staged.value)) continue;
-			writeThrough(staged.segments, staged.value);
-			applied.push({ path: staged.path, prev, next: staged.value });
-			wakeForWrite(staged.segments, woken);
-		}
-
-		// The same push a commit performs: an observed derivation's readers
-		// subscribed to an address nothing writes directly, so without this a
-		// derivation over hydrated data would keep its stale value, and its
-		// observers would sleep, until some unrelated later commit.
-		if (observedDerived.size > 0) pushDerived(woken);
-		if (resourceStates.size > 0) sweepResources(woken);
-
-		// Mark adopted resources so a reader can refresh behind the first paint.
-		//
-		// This has to DESCEND: a segment dehydrates as one opaque value, so its
-		// resource values travel inside it rather than as their own entries. The
-		// walk is proportional to the payload, which was already parsed, and it only
-		// runs when the revalidation window has actually elapsed.
-		if (stale) {
-			for (const path of [...bulkPaths, ...writes.keys()]) {
-				const segments = path.split('/');
-				const schemaNode = resolveSchema(schema, segments);
-				if (schemaNode !== null) markStaleUnder(schemaNode, segments, path);
-			}
-		}
-
-		notify(woken, { id: ++commitId, source: options?.source ?? 'hydrate', writes: applied });
-		return {
-			applied: [...bulkPaths, ...applied.map((w) => w.path)],
-			rejected,
-			unknown,
-		};
+	function markResourceStale(
+		schemaNode: SchemaNode,
+		segments: readonly string[],
+		path: string,
+	): void {
+		if (readValue(segments, schemaNode) === undefined) return;
+		ensureResource(path, segments, schemaNode).stale = true;
 	}
 
 	// ── Public surface ──────────────────────────────────────────────────────
@@ -1806,7 +1538,7 @@ export function createStore<S>(shape: S): Store<S> {
 		}
 
 		const pushes = observedDerived.size > 0 || resourceStates.size > 0;
-		const listening = commitSubs.size > 0 || watchIndex.size > 0;
+		const listening = commitSubs.size > 0;
 		if (pushes || listening) {
 			// Something needs the full shape, so build it. Otherwise none of it is
 			// allocated at all.
@@ -1883,7 +1615,7 @@ export function createStore<S>(shape: S): Store<S> {
 	}
 
 	function commitName(): string {
-		return DEV && (commitSubs.size > 0 || watchIndex.size > 0) ? callerName('action') : 'action';
+		return DEV && commitSubs.size > 0 ? callerName('action') : 'action';
 	}
 
 	function act(fn: (tx: Tx) => void, source?: string): void {
@@ -2247,57 +1979,6 @@ export function createStore<S>(shape: S): Store<S> {
 			fail(`no such path "${path}"; check it against the schema`);
 		}
 		return new RefImpl(path, segments, holder) as unknown as Ref<unknown>;
-	}
-
-	function detachPort(record: PortRecord): void {
-		if (!record.live) return;
-		record.live = false;
-		ports.delete(record);
-		for (const entry of [...watches]) {
-			if (entry.owner !== record) continue;
-			watches.delete(entry);
-			unindexWatch(entry);
-		}
-		const detach = record.detach;
-		record.detach = null;
-		if (detach !== null) {
-			try {
-				detach();
-			} catch (error) {
-				reportError(error, record);
-			}
-		}
-	}
-
-	function attach(port: Port): Dispose {
-		for (const existing of ports) {
-			if (existing.port === port) fail(`port "${port.name}" is already attached`);
-		}
-		const record: PortRecord = { port, detach: null, live: true };
-		ports.add(record);
-		const ctx: PortContext = {
-			read: (path) => readSegments(ref(path).path.split('/')),
-			write: (path, value) => {
-				const target = ref(path);
-				act((tx) => tx.set(target, value), port.name);
-			},
-			watch: (pattern, cb) => {
-				const entry: WatchEntry = { pattern: pattern.split('/'), cb, owner: record };
-				watches.add(entry);
-				indexWatch(entry);
-				return () => {
-					watches.delete(entry);
-					unindexWatch(entry);
-				};
-			},
-			commits: (cb) => {
-				commitSubs.add(cb);
-				return () => commitSubs.delete(cb);
-			},
-		};
-		const detach = port.attach(ctx);
-		if (typeof detach === 'function') record.detach = detach;
-		return () => detachPort(record);
 	}
 
 	// ── The accessor tree ───────────────────────────────────────────────────
@@ -2784,7 +2465,32 @@ export function createStore<S>(shape: S): Store<S> {
 		return api;
 	}
 
-	const api: Store<S> = {
+	// Optional entry points ask for this bridge only when they are actually used.
+	// The ordinary store pays for one closure, but no context object, adapter state,
+	// or dispatch on get/set/act/observe.
+	let boundary: StoreInternals | null = null;
+	function boundaryOf(): StoreInternals {
+		return (boundary ??= {
+			v: 1,
+			schema,
+			findNode,
+			readValue,
+			writeThrough,
+			wakeForWrite,
+			bumpSubtree,
+			pushDerived,
+			sweepResources,
+			markResourceStale,
+			advanceVersion: () => ++version,
+			nextCommitId: () => ++commitId,
+			notify,
+			changePortCount: (delta) => {
+				portCount += delta;
+			},
+		});
+	}
+
+	const api: Store<S> & { readonly [STORE_INTERNALS]: () => StoreInternals } = {
 		state: rootView,
 		with: withImpls,
 		get: <T>(target: Ref<T>): T => readRef(target as AnyRef) as T,
@@ -2805,9 +2511,6 @@ export function createStore<S>(shape: S): Store<S> {
 		refresh,
 		save,
 		forget,
-		dehydrate,
-		hydrate,
-		attach,
 		commits: (cb) => {
 			commitSubs.add(cb);
 			return () => commitSubs.delete(cb);
@@ -2815,9 +2518,10 @@ export function createStore<S>(shape: S): Store<S> {
 		stats: () => ({
 			nodes: countNodes(root),
 			observedDerived: observedDerived.size,
-			ports: ports.size,
+			ports: portCount,
 			resources: resourceStates.size,
 		}),
+		[STORE_INTERNALS]: boundaryOf,
 	};
 	holder.store = api;
 	return api;

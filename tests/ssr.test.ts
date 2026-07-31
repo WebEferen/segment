@@ -2,6 +2,7 @@
 // prerendering, and incremental regeneration stop being three mechanisms:
 // slicing by pattern and merging two payloads are both trivial on a flat map.
 import { describe, expect, it, vi } from 'vitest';
+import { dehydrate, hydrate } from '../src/ssr/index.js';
 import { makeStore, uid } from './fixture.js';
 import { flush, makeResourceStore } from './resource-fixture.js';
 
@@ -12,7 +13,7 @@ describe('dehydrate', () => {
 			tx.set(s.ui.count, 7);
 			tx.set(s.users.at(uid(1)).name, 'Ada');
 		});
-		const payload = store.dehydrate();
+		const payload = dehydrate(store);
 
 		expect(payload.v).toBe(1);
 		expect(payload.data['ui/count']).toBe(7);
@@ -26,18 +27,18 @@ describe('dehydrate', () => {
 	it('ships only the requested slice, which is what a static shell needs', () => {
 		const { store, s } = makeStore();
 		store.act((tx) => tx.set(s.users.at(uid(1)).name, 'Ada'));
-		const shell = store.dehydrate({ include: ['ui/**'] });
+		const shell = dehydrate(store, { include: ['ui/**'] });
 		expect(Object.keys(shell.data).sort()).toEqual(['ui/count', 'ui/theme']);
 
-		const dynamic = store.dehydrate({ exclude: ['ui/**'] });
+		const dynamic = dehydrate(store, { exclude: ['ui/**'] });
 		expect(Object.keys(dynamic.data)).not.toContain('ui/count');
 		expect(dynamic.data['users']).toEqual({ u1: { name: 'Ada' } });
 	});
 
 	it('records a production time only when asked', () => {
 		const { store } = makeStore();
-		expect(store.dehydrate().at).toBeUndefined();
-		expect(store.dehydrate({ at: 1000 }).at).toBe(1000);
+		expect(dehydrate(store).at).toBeUndefined();
+		expect(dehydrate(store, { at: 1000 }).at).toBe(1000);
 	});
 });
 
@@ -49,12 +50,12 @@ describe('hydrate', () => {
 			tx.set(source.s.ui.theme, 'dark');
 			tx.set(source.s.users.at(uid(1)).name, 'Ada');
 		});
-		const payload = source.store.dehydrate();
+		const payload = dehydrate(source.store);
 
 		const client = makeStore();
 		const commits: string[] = [];
 		client.store.commits((commit) => commits.push(commit.source));
-		client.store.hydrate(payload);
+		hydrate(client.store, payload);
 
 		expect(client.store.get(client.s.ui.count)).toBe(5);
 		expect(client.store.get(client.s.ui.theme)).toBe('dark');
@@ -65,24 +66,24 @@ describe('hydrate', () => {
 	it('wakes an observer of a hydrated leaf', () => {
 		const source = makeStore();
 		source.store.act((tx) => tx.set(source.s.ui.count, 5));
-		const payload = source.store.dehydrate();
+		const payload = dehydrate(source.store);
 
 		const client = makeStore();
 		const observer = vi.fn();
 		client.store.observe(client.s.ui.count, observer);
-		client.store.hydrate(payload);
+		hydrate(client.store, payload);
 		expect(observer).toHaveBeenCalledTimes(1);
 	});
 
 	it('wakes an observer inside a hydrated partition', () => {
 		const source = makeStore();
 		source.store.act((tx) => tx.set(source.s.users.at(uid(1)).name, 'Ada'));
-		const payload = source.store.dehydrate();
+		const payload = dehydrate(source.store);
 
 		const client = makeStore();
 		const observer = vi.fn();
 		client.store.observe(client.s.users.at(uid(1)).name, observer);
-		client.store.hydrate(payload);
+		hydrate(client.store, payload);
 		expect(observer).toHaveBeenCalledTimes(1);
 		expect(client.store.get(client.s.users.at(uid(1)).name)).toBe('Ada');
 	});
@@ -90,10 +91,10 @@ describe('hydrate', () => {
 	it('recomputes derivations from hydrated inputs rather than trusting a shipped value', () => {
 		const source = makeStore();
 		source.store.act((tx) => tx.set(source.s.ui.count, 5));
-		const payload = source.store.dehydrate();
+		const payload = dehydrate(source.store);
 
 		const client = makeStore();
-		client.store.hydrate(payload);
+		hydrate(client.store, payload);
 		expect(client.store.get(client.s.calc.sum)).toBe(5 * 2 + 6);
 	});
 
@@ -103,13 +104,13 @@ describe('hydrate', () => {
 			tx.set(source.s.ui.theme, 'dark');
 			tx.set(source.s.users.at(uid(1)).name, 'Ada');
 		});
-		const shell = source.store.dehydrate({ include: ['ui/**'] });
-		const dynamic = source.store.dehydrate({ exclude: ['ui/**'] });
+		const shell = dehydrate(source.store, { include: ['ui/**'] });
+		const dynamic = dehydrate(source.store, { exclude: ['ui/**'] });
 
 		const client = makeStore();
-		client.store.hydrate(shell);
+		hydrate(client.store, shell);
 		expect(client.store.get(client.s.ui.theme)).toBe('dark');
-		client.store.hydrate(dynamic);
+		hydrate(client.store, dynamic);
 		expect(client.store.get(client.s.users.at(uid(1)).name)).toBe('Ada');
 		// The shell survived the second merge.
 		expect(client.store.get(client.s.ui.theme)).toBe('dark');
@@ -118,14 +119,14 @@ describe('hydrate', () => {
 	it('skips a path the current schema no longer describes', () => {
 		const client = makeStore();
 		expect(() =>
-			client.store.hydrate({ v: 1, data: { 'gone/away': 1, 'ui/count': 3 } }),
+			hydrate(client.store, { v: 1, data: { 'gone/away': 1, 'ui/count': 3 } }),
 		).not.toThrow();
 		expect(client.store.get(client.s.ui.count)).toBe(3);
 	});
 
 	it('rejects a payload version it cannot read', () => {
 		const client = makeStore();
-		expect(() => client.store.hydrate({ v: 2 as never, data: {} })).toThrow(
+		expect(() => hydrate(client.store, { v: 2 as never, data: {} })).toThrow(
 			/unsupported payload version/,
 		);
 	});
@@ -137,10 +138,10 @@ describe('hydrate: resources', () => {
 		server.store.resource(server.s.users.at('u1').avatar);
 		server.settle('avatar:u1', 'https://img/1');
 		await flush();
-		const payload = server.store.dehydrate();
+		const payload = dehydrate(server.store);
 
 		const client = makeResourceStore();
-		client.store.hydrate(payload);
+		hydrate(client.store, payload);
 		const snap = client.store.resource(client.s.users.at('u1').avatar);
 		expect(snap.status).toBe('ready');
 		expect(snap.value).toBe('https://img/1');
@@ -151,7 +152,8 @@ describe('hydrate: resources', () => {
 
 	it('marks an adopted resource stale past maxAge, without blocking the first paint', () => {
 		const client = makeResourceStore();
-		client.store.hydrate(
+		hydrate(
+			client.store,
 			{ v: 1, at: Date.now() - 60_000, data: { users: { u1: { avatar: 'cached' } } } },
 			{ maxAge: 1_000 },
 		);
@@ -165,7 +167,8 @@ describe('hydrate: resources', () => {
 
 	it('leaves a fresh payload unmarked', () => {
 		const client = makeResourceStore();
-		client.store.hydrate(
+		hydrate(
+			client.store,
 			{ v: 1, at: Date.now(), data: { users: { u1: { avatar: 'cached' } } } },
 			{ maxAge: 60_000 },
 		);
@@ -174,7 +177,7 @@ describe('hydrate: resources', () => {
 
 	it('does not judge staleness without a production time', () => {
 		const client = makeResourceStore();
-		client.store.hydrate({ v: 1, data: { users: { u1: { avatar: 'cached' } } } }, { maxAge: 1 });
+		hydrate(client.store, { v: 1, data: { users: { u1: { avatar: 'cached' } } } }, { maxAge: 1 });
 		expect(client.store.resource(client.s.users.at('u1').avatar).stale).toBe(false);
 	});
 
@@ -190,7 +193,8 @@ describe('hydrate: resources', () => {
 describe('hydrate: a payload from the wire', () => {
 	it('drops any path the allowlist does not cover', () => {
 		const { store, s } = makeStore();
-		const result = store.hydrate(
+		const result = hydrate(
+			store,
 			{ v: 1, data: { 'cart/items': [{ sku: 'a', qty: 2 }], 'ui/theme': 'dark' } },
 			{ allow: ['cart/**'] },
 		);
@@ -203,7 +207,7 @@ describe('hydrate: a payload from the wire', () => {
 
 	it('applies everything when no allowlist is given', () => {
 		const { store, s } = makeStore();
-		const result = store.hydrate({ v: 1, data: { 'ui/theme': 'dark' } });
+		const result = hydrate(store, { v: 1, data: { 'ui/theme': 'dark' } });
 		expect(result.applied).toEqual(['ui/theme']);
 		expect(result.rejected).toEqual([]);
 		expect(store.get(s.ui.theme)).toBe('dark');
@@ -211,7 +215,8 @@ describe('hydrate: a payload from the wire', () => {
 
 	it('reports an unknown path separately from a rejected one', () => {
 		const { store } = makeStore();
-		const result = store.hydrate(
+		const result = hydrate(
+			store,
 			{ v: 1, data: { 'gone/away': 1, 'ui/theme': 'dark', 'ui/count': 2 } },
 			{ allow: ['ui/**', 'gone/**'] },
 		);
@@ -221,7 +226,8 @@ describe('hydrate: a payload from the wire', () => {
 
 	it('refuses to write a derived or an action even when allowed', () => {
 		const { store } = makeStore();
-		const result = store.hydrate(
+		const result = hydrate(
+			store,
 			{ v: 1, data: { 'calc/sum': 999, 'cart/bump': 1 } },
 			{ allow: ['**'] },
 		);
@@ -233,7 +239,7 @@ describe('hydrate: a payload from the wire', () => {
 		const { store } = makeStore();
 		const sources: string[] = [];
 		store.commits((commit) => sources.push(commit.source));
-		store.hydrate({ v: 1, data: { 'ui/theme': 'dark' } }, { source: 'rpc:updateTheme' });
+		hydrate(store, { v: 1, data: { 'ui/theme': 'dark' } }, { source: 'rpc:updateTheme' });
 		expect(sources).toEqual(['rpc:updateTheme']);
 	});
 
@@ -242,25 +248,25 @@ describe('hydrate: a payload from the wire', () => {
 		client.store.act((tx) => tx.set(client.s.cart.items.at(0).qty, 3));
 
 		// What the client would send as the RPC argument.
-		const request = client.store.dehydrate({ include: ['cart/**'] });
+		const request = dehydrate(client.store, { include: ['cart/**'] });
 		expect(request.data['cart/items']).toEqual([{ qty: 3 }]);
 
 		// What a server function would return, scoped on arrival.
 		const response = { v: 1 as const, data: { 'cart/items': [{ sku: 'x', qty: 9 }] } };
-		client.store.hydrate(response, { allow: ['cart/**'], source: 'rpc:repriceCart' });
+		hydrate(client.store, response, { allow: ['cart/**'], source: 'rpc:repriceCart' });
 		expect(client.store.get(client.s.cart.items.at(0).qty)).toBe(9);
 	});
 
 	it('wakes an observed derivation whose inputs arrived by hydration', () => {
 		const server = makeStore();
 		server.store.act((tx) => tx.set(server.s.ui.count, 21));
-		const payload = server.store.dehydrate();
+		const payload = dehydrate(server.store);
 
 		const client = makeStore();
 		const woken = vi.fn();
 		client.store.observe(client.s.calc.double, woken);
 		expect(client.store.get(client.s.calc.double)).toBe(0);
-		client.store.hydrate(payload);
+		hydrate(client.store, payload);
 		// The derivation's readers subscribed to an address nothing writes
 		// directly, so the hydrate commit itself has to push it.
 		expect(woken).toHaveBeenCalledTimes(1);

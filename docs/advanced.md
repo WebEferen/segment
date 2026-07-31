@@ -239,6 +239,9 @@ Segment does not move a live store from Node to the browser. The server and clie
 create separate stores from the same model, while `dehydrate()` and `hydrate()` move
 only a versioned snapshot of addressable data between them:
 
+Both functions live in the optional `segment-state/ssr` entry point, so an
+application that only needs local state does not ship serialization code.
+
 ```text
 request → fresh server store → render + dehydrate → HTML/JSON
                                                      ↓
@@ -290,6 +293,7 @@ transport, and apply the application's normal CSP nonce when required.
 
 ```ts
 // server.ts
+import { dehydrate } from 'segment-state/ssr';
 import { createAppStore } from './app-state.js';
 
 export async function renderRequest(request: Request): Promise<string> {
@@ -301,7 +305,7 @@ export async function renderRequest(request: Request): Promise<string> {
 	});
 
 	const appHtml = await renderApp(store);
-	const payload = store.dehydrate({ at: Date.now() });
+	const payload = dehydrate(store, { at: Date.now() });
 	const payloadJson = JSON.stringify(payload).replaceAll('<', '\\u003c');
 
 	return `<!doctype html>
@@ -322,7 +326,7 @@ it before mounting the application:
 
 ```ts
 // client.ts
-import type { Payload } from 'segment-state';
+import { hydrate, type Payload } from 'segment-state/ssr';
 import { createAppStore } from './app-state.js';
 
 const element = document.querySelector<HTMLScriptElement>('#segment-state');
@@ -331,7 +335,7 @@ if (!element?.textContent || !root) throw new Error('Incomplete SSR document');
 
 const payload = JSON.parse(element.textContent) as Payload;
 const store = createAppStore();
-const result = store.hydrate(payload, { maxAge: 60_000 });
+const result = hydrate(store, payload, { maxAge: 60_000 });
 
 mountApp(store, root);
 console.log(result.unknown); // paths absent from the current client model
@@ -361,17 +365,19 @@ or `maxAge`, hydration does not infer an age.
 slice later. Every `hydrate()` call remains its own atomic commit:
 
 ```ts
-const shell = serverStore.dehydrate({ include: ['ui/**'] });
-const page = serverStore.dehydrate({ include: ['page/**'], at: Date.now() });
+import { dehydrate, hydrate } from 'segment-state/ssr';
 
-clientStore.hydrate(shell);
-clientStore.hydrate(page, { maxAge: 60_000 });
+const shell = dehydrate(serverStore, { include: ['ui/**'] });
+const page = dehydrate(serverStore, { include: ['page/**'], at: Date.now() });
+
+hydrate(clientStore, shell);
+hydrate(clientStore, page, { maxAge: 60_000 });
 ```
 
 Scope any payload received from an external endpoint or persistent storage:
 
 ```ts
-const result = store.hydrate(responsePayload, {
+const result = hydrate(store, responsePayload, {
 	allow: ['cart/**'],
 	source: 'rpc:reprice',
 });
@@ -391,7 +397,9 @@ A port lets an external system participate using path strings rather than in-mem
 refs:
 
 ```ts
-const detach = store.attach({
+import { attachPort } from 'segment-state/ports';
+
+const detach = attachPort(store, {
 	name: 'socket',
 	attach(ctx) {
 		const stopWatching = ctx.watch('users/*/profile', (path) => {

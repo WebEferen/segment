@@ -71,14 +71,34 @@ try {
 	const smoke = `
 		const root = await import('segment-state');
 		const core = await import('segment-state/core');
+		const ports = await import('segment-state/ports');
+		const ssr = await import('segment-state/ssr');
 		for (const name of ['cell', 'createStore', 'segment']) {
 			if (typeof root[name] !== 'function' || root[name] !== core[name]) {
 				throw new Error('broken packed export: ' + name);
 			}
 		}
+		if (root.attachPort !== ports.attachPort || root.dehydrate !== ssr.dehydrate || root.hydrate !== ssr.hydrate) {
+			throw new Error('root optional exports do not match their subpaths');
+		}
+		if ('attachPort' in core || 'dehydrate' in core || 'hydrate' in core) {
+			throw new Error('core entry point contains an optional adapter export');
+		}
 		const store = root.createStore({ count: 0 });
 		store.set(store.state.count, 1, 'pack/smoke');
 		if (store.get(store.state.count) !== 1) throw new Error('packed runtime smoke test failed');
+		const payload = ssr.dehydrate(store);
+		const client = root.createStore({ count: 0 });
+		ssr.hydrate(client, payload);
+		if (client.get(client.state.count) !== 1) throw new Error('packed SSR smoke test failed');
+		let ctx;
+		const detach = ports.attachPort(client, { name: 'pack', attach(value) { ctx = value; } });
+		ctx.write('count', 2);
+		if (client.get(client.state.count) !== 2 || client.stats().ports !== 1) {
+			throw new Error('packed port smoke test failed');
+		}
+		detach();
+		if (client.stats().ports !== 0) throw new Error('packed port cleanup failed');
 	`;
 	run(process.execPath, ['--input-type=module', '--eval', smoke], consumer);
 
