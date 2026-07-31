@@ -1,4 +1,4 @@
-// segment-state — path-addressed state, with no dependency on Octane,
+// segment-state/core — path-addressed state, with no dependency on Octane,
 // the DOM, or any renderer. It runs in a browser, in Node, and in a worker.
 //
 // The design is constrained by two spikes that were run before any of this was

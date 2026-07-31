@@ -4,7 +4,7 @@ layout: home
 hero:
   name: Segment
   text: State you can address.
-  tagline: A framework-agnostic, type-safe state engine built around structural paths, targeted subscriptions, and atomic commits.
+  tagline: A type-safe state engine for Octane built around structural paths, targeted subscriptions, and atomic commits.
   image:
     src: /logo.svg
     alt: Segment

@@ -133,5 +133,5 @@ npm pack --dry-run
 ```
 
 The published package contains `dist`, `README.md`, `CHANGELOG.md`, and `LICENSE`,
-with exports for `segment-state`, `segment-state/core`, `segment-state/octane`,
-`segment-state/ports`, and `segment-state/ssr`.
+with exports for `segment-state`, `segment-state/core`, `segment-state/ports`, and
+`segment-state/ssr`.

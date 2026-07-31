@@ -4,7 +4,7 @@
 
 <p align="center">
 	<strong>State you can address.</strong><br />
-	A framework-agnostic, type-safe state engine built around structural paths,
+	A type-safe state engine for Octane built around structural paths,
 	targeted subscriptions, and atomic commits.
 </p>
 
@@ -31,8 +31,8 @@
 
 ## What is Segment?
 
-Segment is a small state engine for applications where data has a natural address:
-records, documents, caches, server payloads, and large keyed collections.
+Segment is a small state engine for Octane applications where data has a natural
+address: records, documents, caches, server payloads, and large keyed collections.
 
 Many state APIs make a selector, atom object, or store snapshot the identity at the
 call site. Segment instead gives every declared value a structural path:
@@ -75,21 +75,16 @@ describes design trade-offs, not a universal ranking for every application shape
 ## Installation
 
 ```sh
-npm install segment-state
+npm install segment-state octane
 ```
-
-```sh
-pnpm add segment-state
-```
-
-Segment is ESM-only. Node.js `22+` is required for Node runtimes and development
-tooling. Browser and worker builds do not depend on Node or the DOM.
-
-For the optional Octane adapter, install the peer dependency too:
 
 ```sh
 pnpm add segment-state octane
 ```
+
+Octane is a required peer dependency. Segment is ESM-only, and Node.js `22+` is
+required for Node runtimes and development tooling. Renderer-free server, worker,
+or tooling modules can import the DOM-free engine from `segment-state/core`.
 
 ## Quick start
 
@@ -323,11 +318,11 @@ for partial payloads, resource behavior, and authority boundaries.
 
 ## Octane integration
 
-`segment-state/octane` is the optional render-aware adapter. It has no provider and
-keeps subscriptions scoped to the address read by a component.
+The render-aware hooks are exported directly from `segment-state`. There is no
+provider, and subscriptions stay scoped to the address read by a component.
 
 ```tsx
-import { useValue } from 'segment-state/octane';
+import { useValue } from 'segment-state';
 
 export function TodoRow({ id }: { id: string }) @{
 	const [completed, setCompleted] = useValue(s.todos.at(id).completed);
@@ -342,8 +337,10 @@ export function TodoRow({ id }: { id: string }) @{
 - `useStatus(ref)` exposes resource state without suspending.
 - `useDraft(ref)` keeps a local edit and publishes it on demand.
 
-The core remains usable without Octane through `get`, `observe`, and commit streams.
-Ports are an optional path-based adapter; no React or Vue adapter is bundled today.
+Store operations remain usable outside a component through `get`, `observe`, and
+commit streams. Import those APIs from `segment-state/core` in infrastructure that
+must not load Octane. Ports are an optional path-based adapter; no React or Vue
+binding is bundled.
 
 ## Where Segment fits
 
@@ -361,13 +358,12 @@ or request client—it coordinates application state around those systems.
 
 ## Package entry points
 
-| Import                 | Contents                                                         |
-| ---------------------- | ---------------------------------------------------------------- |
-| `segment-state`        | Public surface; unused optional modules tree-shake away.         |
-| `segment-state/core`   | Framework-agnostic state engine only.                            |
-| `segment-state/octane` | Optional Octane integration.                                     |
-| `segment-state/ports`  | Optional path-based external adapter lifecycle.                  |
-| `segment-state/ssr`    | Optional `dehydrate()` and atomic `hydrate()` serialization API. |
+| Import                | Contents                                                         |
+| --------------------- | ---------------------------------------------------------------- |
+| `segment-state`       | Store API, Octane hooks, and tree-shakeable adapter helpers.     |
+| `segment-state/core`  | Renderer-free state engine; imports neither Octane nor the DOM.  |
+| `segment-state/ports` | Optional path-based external adapter lifecycle.                  |
+| `segment-state/ssr`   | Optional `dehydrate()` and atomic `hydrate()` serialization API. |
 
 ## Documentation
 

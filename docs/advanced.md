@@ -202,14 +202,10 @@ in `.with()` while exporting small application-specific helpers as normal functi
 
 ## Octane integration
 
-Install `octane` next to Segment and import the optional adapter:
-
-```sh
-pnpm add segment-state octane
-```
+The render-aware hooks are part of the main package entry point:
 
 ```tsx
-import { useDraft, useStatus, useValue } from 'segment-state/octane';
+import { useDraft, useStatus, useValue } from 'segment-state';
 
 function ProfileEditor({ id }: { id: string }) @{
 	const profileRef = store.state.users.at(id).profile;

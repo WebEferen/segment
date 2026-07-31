@@ -1,4 +1,4 @@
-// segment-state/octane — the optional Octane binding.
+// The Octane binding exposed by the main `segment-state` entry point.
 //
 // Three hooks, and only the first is needed to read anything:
 //
@@ -26,7 +26,7 @@
 //  * Compiler-assigned hook slots, so `subscribe` and `getSnapshot` are allocated
 //    ONCE PER COMPONENT rather than once per render. Every existing store binding
 //    in this repo reallocates them every render.
-//  * `use()` for `useResource`, so several independent resources in one component
+//  * `use()` for resource reads, so several independent resources in one component
 //    are batched into one suspend and fetched IN PARALLEL. React runs the same
 //    code as a waterfall.
 //  * `useLinkedState` for `useDraft`, so a moved source reconciles inside the same
@@ -155,8 +155,8 @@ function bindingFor(ref: AnyRef, store: Store<unknown>, slot: symbol | undefined
  * rather than by diffing the object. Treat the record as read-only: mutating it
  * writes into the store behind its back, with nothing notified.
  *
- * A fetched value goes through `useResource` or `useStatus` instead — this throws
- * on one, because waiting silently from a hook named "value" would be a trap.
+ * A fetched value waits through Octane's suspense model. Use `useStatus` instead
+ * when the component should draw the pending and error states itself.
  */
 export function useValue<T, K extends AddressKind>(ref: Ref<T, K>): ValueTuple<T, K>;
 export function useValue<const T extends readonly Ref<unknown>[]>(
@@ -393,37 +393,3 @@ export function useDraft<T>(...args: unknown[]): [T, (next: T) => void, () => vo
 	);
 	return [draft, setDraft as (next: T) => void, publish];
 }
-
-// The agnostic core is re-exported so an application needs one import, and so a
-// worker or a server route can pull the same names from `segment-state`
-// without the renderer coming with them.
-export { action, cell, createStore, derived, list, resource, segment } from '../core/index.js';
-export type {
-	Act,
-	AddressKind,
-	Commit,
-	DehydrateOptions,
-	Dispose,
-	Get,
-	HydrateOptions,
-	HydrateResult,
-	Impl,
-	LiveContext,
-	LoadContext,
-	ObserveOptions,
-	Payload,
-	Port,
-	PortContext,
-	Ref,
-	ResourceSnapshot,
-	ResourceStatus,
-	SaveContext,
-	Setter,
-	Snapshot,
-	Store,
-	TaskContext,
-	ValueTuple,
-	Tx,
-	View,
-	Write,
-} from '../core/index.js';

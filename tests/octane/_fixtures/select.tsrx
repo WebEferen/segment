@@ -1,4 +1,4 @@
-import { useValue } from 'segment-state/octane';
+import { useValue } from 'segment-state';
 import type { AppStore } from './store.js';
 
 interface Props {

@@ -1,7 +1,7 @@
 {
   "name": "segment-state",
   "version": "0.0.2",
-  "description": "Framework-agnostic, path-addressed state with O(observed) memory and transactional commits.",
+  "description": "Path-addressed state for Octane with O(observed) memory and transactional commits.",
   "keywords": [
     "state-management",
     "state",
@@ -49,11 +49,6 @@
       "import": "./dist/core/index.js",
       "default": "./dist/core/index.js"
     },
-    "./octane": {
-      "types": "./dist/octane/index.d.ts",
-      "import": "./dist/octane/index.js",
-      "default": "./dist/octane/index.js"
-    },
     "./ports": {
       "types": "./dist/ports/index.d.ts",
       "import": "./dist/ports/index.js",
@@ -98,11 +93,6 @@
   },
   "peerDependencies": {
     "octane": "^0.1.21"
-  },
-  "peerDependenciesMeta": {
-    "octane": {
-      "optional": true
-    }
   },
   "devDependencies": {
     "@changesets/cli": "2.31.1",
