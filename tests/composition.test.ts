@@ -1,6 +1,7 @@
 // Anonymous derivations and async tasks: the two things that exist because the
 // alternatives were traps.
 import { describe, expect, it, vi } from 'vitest';
+import { dehydrate } from '../src/ssr/index.js';
 import { action, createStore, task } from '../src/core/index.js';
 import { makeStore, uid } from './fixture.js';
 
@@ -131,7 +132,7 @@ describe('task', () => {
 
 	it('is omitted from a dehydrated payload', () => {
 		const store = createStore({ n: 1, go: task() }).with(() => ({ go: () => {} }));
-		expect(Object.keys(store.dehydrate().data)).toEqual(['n']);
+		expect(Object.keys(dehydrate(store).data)).toEqual(['n']);
 	});
 });
 
@@ -302,6 +303,6 @@ describe('task: its own run state', () => {
 	it('keeps run state out of a dehydrated payload', () => {
 		const { store, s } = makeTaskStore();
 		void s.run(1);
-		expect(Object.keys(store.dehydrate().data)).toEqual([]);
+		expect(Object.keys(dehydrate(store).data)).toEqual([]);
 	});
 });

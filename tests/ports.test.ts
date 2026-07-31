@@ -2,6 +2,7 @@
 // reference to any JavaScript object in the store participates by PATH.
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Commit, Port, PortContext } from '../src/core/index.js';
+import { attachPort } from '../src/ports/index.js';
 import { makeStore, uid } from './fixture.js';
 
 afterEach(() => {
@@ -16,7 +17,10 @@ describe('ports', () => {
 	it('reads and writes by path string', () => {
 		const { store, s } = makeStore();
 		let ctx!: PortContext;
-		store.attach(recordingPort('probe', (c) => void (ctx = c)));
+		attachPort(
+			store,
+			recordingPort('probe', (c) => void (ctx = c)),
+		);
 
 		store.act((tx) => tx.set(s.users.at(uid(1)).name, 'Ada'));
 		expect(ctx.read('users/u1/name')).toBe('Ada');
@@ -30,7 +34,10 @@ describe('ports', () => {
 		const sources: string[] = [];
 		store.commits((commit) => sources.push(commit.source));
 		let ctx!: PortContext;
-		store.attach(recordingPort('socket', (c) => void (ctx = c)));
+		attachPort(
+			store,
+			recordingPort('socket', (c) => void (ctx = c)),
+		);
 		ctx.write('ui/count', 3);
 		expect(sources).toEqual(['socket']);
 	});
@@ -39,7 +46,10 @@ describe('ports', () => {
 		const { store, s } = makeStore();
 		const seen: Commit[] = [];
 		let ctx!: PortContext;
-		store.attach(recordingPort('log', (c) => void (ctx = c)));
+		attachPort(
+			store,
+			recordingPort('log', (c) => void (ctx = c)),
+		);
 		ctx.commits((commit) => seen.push(commit));
 		store.act((tx) => tx.set(s.ui.count, 1));
 		store.act((tx) => tx.set(s.ui.theme, 'dark'));
@@ -52,7 +62,10 @@ describe('ports', () => {
 		const { store, s } = makeStore();
 		const hit = vi.fn();
 		let ctx!: PortContext;
-		store.attach(recordingPort('p', (c) => void (ctx = c)));
+		attachPort(
+			store,
+			recordingPort('p', (c) => void (ctx = c)),
+		);
 		ctx.watch('ui/count', hit);
 		store.act((tx) => tx.set(s.ui.count, 1));
 		store.act((tx) => tx.set(s.ui.theme, 'dark'));
@@ -63,7 +76,10 @@ describe('ports', () => {
 		const { store, s } = makeStore();
 		const hit = vi.fn();
 		let ctx!: PortContext;
-		store.attach(recordingPort('p', (c) => void (ctx = c)));
+		attachPort(
+			store,
+			recordingPort('p', (c) => void (ctx = c)),
+		);
 		ctx.watch('users/*/name', hit);
 		store.act((tx) => {
 			tx.set(s.users.at(uid(1)).name, 'a');
@@ -77,7 +93,10 @@ describe('ports', () => {
 		const { store, s } = makeStore();
 		const hit = vi.fn();
 		let ctx!: PortContext;
-		store.attach(recordingPort('p', (c) => void (ctx = c)));
+		attachPort(
+			store,
+			recordingPort('p', (c) => void (ctx = c)),
+		);
 		ctx.watch('users/**', hit);
 		store.act((tx) => {
 			tx.set(s.users.at(uid(1)).name, 'a');
@@ -89,7 +108,10 @@ describe('ports', () => {
 	it('runs the cleanup the port returned when detached', () => {
 		const { store } = makeStore();
 		const cleanup = vi.fn();
-		const detach = store.attach(recordingPort('p', () => cleanup));
+		const detach = attachPort(
+			store,
+			recordingPort('p', () => cleanup),
+		);
 		expect(cleanup).not.toHaveBeenCalled();
 		detach();
 		expect(cleanup).toHaveBeenCalledTimes(1);
@@ -99,18 +121,88 @@ describe('ports', () => {
 		const { store, s } = makeStore();
 		const hit = vi.fn();
 		let ctx!: PortContext;
-		const detach = store.attach(recordingPort('p', (c) => void (ctx = c)));
+		const detach = attachPort(
+			store,
+			recordingPort('p', (c) => void (ctx = c)),
+		);
 		ctx.watch('ui/**', hit);
 		detach();
 		store.act((tx) => tx.set(s.ui.count, 1));
 		expect(hit).not.toHaveBeenCalled();
 	});
 
+	it('stops commit listeners owned by a detached port', () => {
+		const { store, s } = makeStore();
+		const seen = vi.fn();
+		const detach = attachPort(
+			store,
+			recordingPort('p', (ctx) => {
+				ctx.commits(seen);
+			}),
+		);
+
+		detach();
+		store.set(s.ui.count, 1);
+
+		expect(seen).not.toHaveBeenCalled();
+	});
+
+	it('rolls back adapter state when attach throws', () => {
+		const { store, s } = makeStore();
+		const watched = vi.fn();
+		const broken = recordingPort('broken', (ctx) => {
+			ctx.watch('ui/**', watched);
+			throw new Error('attach failed');
+		});
+
+		expect(() => attachPort(store, broken)).toThrow('attach failed');
+		expect(store.stats().ports).toBe(0);
+		store.set(s.ui.count, 1);
+		expect(watched).not.toHaveBeenCalled();
+	});
+
+	it('runs a late teardown when the port detached during attach', () => {
+		vi.spyOn(console, 'error').mockImplementation(() => {});
+		const { store } = makeStore();
+		const cleanup = vi.fn();
+
+		attachPort(store, {
+			name: 'self-detaching',
+			attach(ctx) {
+				ctx.watch('ui/count', () => {
+					throw new Error('detach me');
+				});
+				ctx.write('ui/count', 1);
+				return cleanup;
+			},
+		});
+
+		expect(cleanup).toHaveBeenCalledTimes(1);
+		expect(store.stats().ports).toBe(0);
+	});
+
+	it('defers a write made by a watch until the triggering commit finishes', () => {
+		const { store, s } = makeStore();
+		const sources: string[] = [];
+		store.commits((commit) => sources.push(commit.source));
+		attachPort(
+			store,
+			recordingPort('socket', (ctx) => {
+				ctx.watch('ui/count', () => ctx.write('ui/theme', 'dark'));
+			}),
+		);
+
+		store.set(s.ui.count, 1, 'ui/count');
+
+		expect(store.get(s.ui.theme)).toBe('dark');
+		expect(sources).toEqual(['ui/count', 'socket']);
+	});
+
 	it('refuses to attach the same port twice', () => {
 		const { store } = makeStore();
 		const port = recordingPort('dup');
-		store.attach(port);
-		expect(() => store.attach(port)).toThrow(/already attached/);
+		attachPort(store, port);
+		expect(() => attachPort(store, port)).toThrow(/already attached/);
 	});
 
 	it('isolates a throwing watch callback and detaches that port', () => {
@@ -119,8 +211,14 @@ describe('ports', () => {
 		const other = vi.fn();
 		let bad!: PortContext;
 		let good!: PortContext;
-		store.attach(recordingPort('bad', (c) => void (bad = c)));
-		store.attach(recordingPort('good', (c) => void (good = c)));
+		attachPort(
+			store,
+			recordingPort('bad', (c) => void (bad = c)),
+		);
+		attachPort(
+			store,
+			recordingPort('good', (c) => void (good = c)),
+		);
 		bad.watch('ui/**', () => {
 			throw new Error('port exploded');
 		});
@@ -141,7 +239,10 @@ describe('ports', () => {
 	it('rejects a port path the schema does not describe', () => {
 		const { store } = makeStore();
 		let ctx!: PortContext;
-		store.attach(recordingPort('p', (c) => void (ctx = c)));
+		attachPort(
+			store,
+			recordingPort('p', (c) => void (ctx = c)),
+		);
 		expect(() => ctx.read('users/u1/nmae')).toThrow(/no such path/);
 		expect(() => ctx.write('nope/here', 1)).toThrow(/no such path/);
 	});
@@ -149,8 +250,8 @@ describe('ports', () => {
 	it('counts attached ports', () => {
 		const { store } = makeStore();
 		expect(store.stats().ports).toBe(0);
-		const off = store.attach(recordingPort('a'));
-		store.attach(recordingPort('b'));
+		const off = attachPort(store, recordingPort('a'));
+		attachPort(store, recordingPort('b'));
 		expect(store.stats().ports).toBe(2);
 		off();
 		expect(store.stats().ports).toBe(1);

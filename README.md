@@ -275,6 +275,8 @@ On the server, create a fresh instance for every request and embed a safely esca
 payload next to the rendered application:
 
 ```ts
+import { dehydrate } from 'segment-state/ssr';
+
 const store = createAppStore();
 
 store.patch(store.state.page, {
@@ -283,7 +285,7 @@ store.patch(store.state.page, {
 });
 
 const appHtml = await renderApp(store);
-const payload = store.dehydrate({ at: Date.now() });
+const payload = dehydrate(store, { at: Date.now() });
 const payloadJson = JSON.stringify(payload).replaceAll('<', '\\u003c');
 
 return `
@@ -297,7 +299,7 @@ In the browser, hydrate before mounting so the first client render sees exactly 
 state used for the server HTML:
 
 ```ts
-import type { Payload } from 'segment-state';
+import { hydrate, type Payload } from 'segment-state/ssr';
 
 const element = document.querySelector<HTMLScriptElement>('#segment-state');
 const root = document.querySelector('#app');
@@ -306,7 +308,7 @@ if (!element?.textContent || !root) throw new Error('Incomplete SSR document');
 const payload = JSON.parse(element.textContent) as Payload;
 const store = createAppStore();
 
-store.hydrate(payload, { maxAge: 60_000 });
+hydrate(store, payload, { maxAge: 60_000 });
 mountApp(store, root);
 ```
 
@@ -340,8 +342,8 @@ export function TodoRow({ id }: { id: string }) @{
 - `useStatus(ref)` exposes resource state without suspending.
 - `useDraft(ref)` keeps a local edit and publishes it on demand.
 
-The core remains usable without Octane through `get`, `observe`, commit streams, and
-ports. No React or Vue adapter is bundled today.
+The core remains usable without Octane through `get`, `observe`, and commit streams.
+Ports are an optional path-based adapter; no React or Vue adapter is bundled today.
 
 ## Where Segment fits
 
@@ -359,11 +361,13 @@ or request client—it coordinates application state around those systems.
 
 ## Package entry points
 
-| Import                 | Contents                                   |
-| ---------------------- | ------------------------------------------ |
-| `segment-state`        | Framework-agnostic core.                   |
-| `segment-state/core`   | Compatibility alias for the same core.     |
-| `segment-state/octane` | Core plus the optional Octane integration. |
+| Import                 | Contents                                                         |
+| ---------------------- | ---------------------------------------------------------------- |
+| `segment-state`        | Public surface; unused optional modules tree-shake away.         |
+| `segment-state/core`   | Framework-agnostic state engine only.                            |
+| `segment-state/octane` | Optional Octane integration.                                     |
+| `segment-state/ports`  | Optional path-based external adapter lifecycle.                  |
+| `segment-state/ssr`    | Optional `dehydrate()` and atomic `hydrate()` serialization API. |
 
 ## Documentation
 

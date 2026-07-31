@@ -18,8 +18,8 @@
 //     inside the literal cannot see the type being inferred from it —
 //     TypeScript collapses it to `never`.
 //
-// The Octane adapter is a separate entry point. Nothing here imports it, and
-// nothing here may.
+// Renderer, SSR, and port adapters are separate entry points. Nothing here
+// imports them, and nothing here may.
 
 export { createStore } from './store.js';
 export type { Store, StoreStats } from './store.js';
