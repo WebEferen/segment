@@ -10,7 +10,7 @@ export default defineConfig({
 	lang: 'en-US',
 	title: 'Segment',
 	description:
-		'A framework-agnostic, type-safe state engine built around structural paths, targeted subscriptions, and atomic commits.',
+		'A type-safe state engine for Octane built around structural paths, targeted subscriptions, and atomic commits.',
 	base: '/segment/',
 	cleanUrls: true,
 	sitemap: {
@@ -29,7 +29,7 @@ export default defineConfig({
 			{
 				property: 'og:description',
 				content:
-					'Path-addressed state with targeted subscriptions, atomic commits, and O(observed) memory.',
+					'Path-addressed state for Octane with targeted subscriptions, atomic commits, and O(observed) memory.',
 			},
 		],
 		['meta', { property: 'og:image', content: 'https://webeferen.github.io/segment/og.png' }],

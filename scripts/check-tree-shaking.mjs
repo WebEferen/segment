@@ -30,9 +30,17 @@ function optionalInputs(result) {
 	return result.inputs.filter((input) => /dist\/(?:octane|ports|ssr)\//.test(input));
 }
 
-const core = await bundle(
-	'core-only',
+const rootStore = await bundle(
+	'root-store',
 	'import { createStore } from "./dist/index.js"; export const store = createStore({ count: 0 });',
+);
+const core = await bundle(
+	'core-subpath',
+	'import { createStore } from "./dist/core/index.js"; export const store = createStore({ count: 0 });',
+);
+const octane = await bundle(
+	'with-octane',
+	'import { useValue } from "./dist/index.js"; export { useValue };',
 );
 const ssr = await bundle(
 	'with-ssr',
@@ -43,12 +51,19 @@ const ports = await bundle(
 	'import { createStore, attachPort } from "./dist/index.js"; const store = createStore({ count: 0 }); export const attach = (port) => attachPort(store, port);',
 );
 
-const unexpectedCore = optionalInputs(core);
-if (unexpectedCore.length > 0) {
-	throw new Error(`core-only bundle retained optional modules: ${unexpectedCore.join(', ')}`);
+for (const result of [rootStore, core]) {
+	const unexpected = optionalInputs(result);
+	if (unexpected.length > 0) {
+		throw new Error(
+			`${result.name} bundle retained renderer or adapters: ${unexpected.join(', ')}`,
+		);
+	}
 }
-if (core.gzip > 10_000) {
-	throw new Error(`core-only bundle is ${core.gzip} B gzip; budget is 10000 B`);
+if (rootStore.gzip > 10_000) {
+	throw new Error(`root store bundle is ${rootStore.gzip} B gzip; budget is 10000 B`);
+}
+if (!optionalInputs(octane).some((input) => input.includes('dist/octane/'))) {
+	throw new Error('root Octane import did not retain the Octane binding');
 }
 if (!optionalInputs(ssr).some((input) => input.includes('dist/ssr/'))) {
 	throw new Error('SSR import did not retain the SSR entry point');
@@ -63,6 +78,6 @@ if (optionalInputs(ports).some((input) => input.includes('dist/ssr/'))) {
 	throw new Error('ports import retained the SSR entry point');
 }
 
-for (const result of [core, ssr, ports]) {
+for (const result of [rootStore, core, octane, ssr, ports]) {
 	console.log(`${result.name}: ${result.gzip} B gzip`);
 }

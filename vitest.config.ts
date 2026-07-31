@@ -32,10 +32,6 @@ export default defineConfig({
 							replacement: resolve(import.meta.dirname, 'src/core/index.ts'),
 						},
 						{
-							find: /^segment-state\/octane$/,
-							replacement: resolve(import.meta.dirname, 'src/octane/index.ts'),
-						},
-						{
 							find: /^segment-state\/ports$/,
 							replacement: resolve(import.meta.dirname, 'src/ports/index.ts'),
 						},

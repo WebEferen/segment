@@ -1,10 +1,9 @@
 # The Segment core
 
-`segment-state` (also available as `segment-state/core`) is the whole state
-engine with no renderer attached. It
-imports neither Octane nor the DOM, and that claim is machine-checked: the core has
-its own `tsconfig.core.json` with no `dom` lib, so a DOM reference that creeps in
-fails typecheck.
+`segment-state/core` is the renderer-free engine underneath Segment's main
+Octane-focused entry point. It imports neither Octane nor the DOM, and that claim
+is machine-checked: the core has its own `tsconfig.core.json` with no `dom` lib, so
+a DOM reference that creeps in fails typecheck.
 
 This document is the detailed implementation reference. Start with the
 [getting-started guide](./guide/getting-started.md) for the public model or the

@@ -1,24 +1,26 @@
 # Getting started
 
-This guide builds a small store, reads and observes individual addresses, and groups
-several writes into one transaction. It uses only the framework-agnostic core.
+This guide starts with the store model underneath the Octane hooks: it builds a
+small store, reads and observes individual addresses, and groups several writes
+into one transaction.
 
 ## Install
 
 ::: code-group
 
 ```sh [npm]
-npm install segment-state
+npm install segment-state octane
 ```
 
 ```sh [pnpm]
-pnpm add segment-state
+pnpm add segment-state octane
 ```
 
 :::
 
-Segment ships as ESM and requires Node.js 22 or newer when it runs under Node. The
-browser and worker core imports neither Node APIs nor the DOM.
+Octane is a required peer dependency. Segment ships as ESM and requires Node.js 22
+or newer when it runs under Node. Server, worker, and tooling code that must not
+load Octane can import the DOM-free engine from `segment-state/core`.
 
 ## Create a store
 
