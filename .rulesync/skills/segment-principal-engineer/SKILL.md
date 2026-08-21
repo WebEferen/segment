@@ -1,6 +1,6 @@
 ---
 name: segment-principal-engineer
-description: Design, implement, refactor, or review Segment architecture and public APIs with principal-engineer rigor. Use for changes involving src/core, src/octane, exported types, state semantics, module boundaries, maintainability, extensibility, compatibility, or substantial cross-cutting work.
+description: Design, implement, refactor, or review Segment architecture and public APIs with principal-engineer rigor. Use for changes involving src/core, renderer bindings, exported types, state semantics, module boundaries, maintainability, extensibility, compatibility, or substantial cross-cutting work.
 targets: ['*']
 codexcli:
   interface:
@@ -32,7 +32,7 @@ behavioral or performance contracts.
 ## Design for durable extension
 
 - Keep `src/core` framework- and DOM-independent. Put renderer-specific scheduling
-  and lifecycle logic in `src/octane`.
+  and lifecycle logic in the renderer's binding (`src/octane`, `src/react`).
 - Preserve one authoritative path for state. Materialized nodes and leaf records are
   indexes over stored values, not competing copies.
 - Keep writes atomic and notifications commit-scoped. Do not expose intermediate

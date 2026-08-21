@@ -4,7 +4,7 @@
 
 <p align="center">
 	<strong>State you can address.</strong><br />
-	A type-safe state engine for Octane built around structural paths,
+	A type-safe state engine for Octane and React built around structural paths,
 	targeted subscriptions, and atomic commits.
 </p>
 
@@ -31,8 +31,9 @@
 
 ## What is Segment?
 
-Segment is a small state engine for Octane applications where data has a natural
-address: records, documents, caches, server payloads, and large keyed collections.
+Segment is a small state engine for Octane and React applications where data has a
+natural address: records, documents, caches, server payloads, and large keyed
+collections.
 
 Many state APIs make a selector, atom object, or store snapshot the identity at the
 call site. Segment instead gives every declared value a structural path:
@@ -75,16 +76,21 @@ describes design trade-offs, not a universal ranking for every application shape
 ## Installation
 
 ```sh
-npm install segment-state octane
+npm install segment-state octane   # an Octane application
+npm install segment-state react    # a React application (React 19+)
 ```
 
 ```sh
 pnpm add segment-state octane
+pnpm add segment-state react
 ```
 
-Octane is a required peer dependency. Segment is ESM-only, and Node.js `22+` is
-required for Node runtimes and development tooling. Renderer-free server, worker,
-or tooling modules can import the DOM-free engine from `segment-state/core`.
+Install the renderer you use: the package root serves the Octane hooks, and
+`segment-state/react` serves the React ones. Both peers are optional, so neither
+renderer is pulled into an application that uses the other. Segment is ESM-only,
+and Node.js `22+` is required for Node runtimes and development tooling.
+Renderer-free server, worker, or tooling modules can import the DOM-free engine
+from `segment-state/core`.
 
 ## Quick start
 
@@ -339,8 +345,29 @@ export function TodoRow({ id }: { id: string }) @{
 
 Store operations remain usable outside a component through `get`, `observe`, and
 commit streams. Import those APIs from `segment-state/core` in infrastructure that
-must not load Octane. Ports are an optional path-based adapter; no React or Vue
-binding is bundled.
+must not load a renderer.
+
+## React integration
+
+The same three hooks ship for React (19 or newer) through `segment-state/react`,
+which also re-exports the whole application API, so a React app imports from one
+place and never loads Octane:
+
+```tsx
+import { useValue } from 'segment-state/react';
+
+export function TodoRow({ id }: { id: string }) {
+	const [completed, setCompleted] = useValue(s.todos.at(id).completed);
+
+	return (
+		<button onClick={() => setCompleted(!completed)}>{completed ? 'Done' : 'Mark complete'}</button>
+	);
+}
+```
+
+The contract matches the Octane binding: no provider, subscriptions scoped to the
+address a component reads, resource reads waiting through `<Suspense>`, and the
+array form of `useValue` starting several loads before suspending once.
 
 ## Where Segment fits
 
@@ -361,7 +388,8 @@ or request client—it coordinates application state around those systems.
 | Import                | Contents                                                         |
 | --------------------- | ---------------------------------------------------------------- |
 | `segment-state`       | Store API, Octane hooks, and tree-shakeable adapter helpers.     |
-| `segment-state/core`  | Renderer-free state engine; imports neither Octane nor the DOM.  |
+| `segment-state/core`  | Renderer-free state engine; imports neither a renderer nor DOM.  |
+| `segment-state/react` | The same application API with React hooks in place of Octane's.  |
 | `segment-state/ports` | Optional path-based external adapter lifecycle.                  |
 | `segment-state/ssr`   | Optional `dehydrate()` and atomic `hydrate()` serialization API. |
 

@@ -23,14 +23,15 @@ surface small enough to evolve.
 
 ## Preserve the core contracts
 
-- Keep `src/core` independent from Octane, browser globals, and the DOM. Its
-  DOM-free TypeScript configuration is an enforced boundary.
+- Keep `src/core` independent from Octane, React, browser globals, and the DOM.
+  Its DOM-free TypeScript configuration is an enforced boundary.
 - Preserve structural path identity, targeted notification, atomic commit and
   rollback semantics, read-your-writes transactions, and deterministic revisions.
 - Keep state-layer memory proportional to currently observed addresses. Detaching
   the last observer must release unbounded per-key bookkeeping.
-- Keep renderer behavior in `src/octane`; the core must remain useful without a UI
-  adapter, provider, or hidden global store.
+- Keep renderer behavior in its binding (`src/octane`, `src/react`); the core must
+  remain useful without a UI adapter, provider, or hidden global store. A binding
+  imports only its own renderer, never another one.
 - Treat exported types, package entry points, serialized commits, SSR payloads, and
   port messages as compatibility surfaces.
 

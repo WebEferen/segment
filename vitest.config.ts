@@ -42,6 +42,26 @@ export default defineConfig({
 					],
 				},
 			},
+			{
+				test: {
+					name: 'segment-react',
+					include: ['tests/react/**/*.test.tsx'],
+					environment: 'jsdom',
+					globals: false,
+				},
+				resolve: {
+					alias: [
+						{
+							find: /^segment-state\/core$/,
+							replacement: resolve(import.meta.dirname, 'src/core/index.ts'),
+						},
+						{
+							find: /^segment-state\/react$/,
+							replacement: resolve(import.meta.dirname, 'src/react/index.ts'),
+						},
+					],
+				},
+			},
 		],
 	},
 });

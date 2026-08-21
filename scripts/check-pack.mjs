@@ -8,11 +8,15 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const manifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
 const staging = await mkdtemp(join(tmpdir(), 'segment-state-pack-'));
 
-if (manifest.peerDependencies?.octane === undefined) {
-	throw new Error('Octane must be a required peer dependency');
-}
-if (manifest.peerDependenciesMeta?.octane?.optional === true) {
-	throw new Error('Octane peer dependency must not be optional');
+// Each renderer peer is optional: an application installs only the renderer it
+// uses, and the core entry points need neither.
+for (const peer of ['octane', 'react']) {
+	if (manifest.peerDependencies?.[peer] === undefined) {
+		throw new Error(`${peer} must be declared as a peer dependency`);
+	}
+	if (manifest.peerDependenciesMeta?.[peer]?.optional !== true) {
+		throw new Error(`${peer} peer dependency must be optional`);
+	}
 }
 if ('./octane' in manifest.exports) {
 	throw new Error('the redundant segment-state/octane entry point is still exported');
@@ -81,7 +85,20 @@ try {
 		consumer,
 		{ env: isolatedNpmEnvironment() },
 	);
+	// Before any renderer peer exists in the consumer, the renderer-free entry
+	// points must import and run: that is what "optional peers" promises.
+	const peerFreeSmoke = `
+		const core = await import('segment-state/core');
+		await import('segment-state/ports');
+		await import('segment-state/ssr');
+		const store = core.createStore({ count: 0 });
+		store.set(store.state.count, 1, 'pack/peer-free');
+		if (store.get(store.state.count) !== 1) throw new Error('peer-free smoke test failed');
+	`;
+	run(process.execPath, ['--input-type=module', '--eval', peerFreeSmoke], consumer);
+
 	await symlink(resolve(root, 'node_modules/octane'), join(consumer, 'node_modules/octane'));
+	await symlink(resolve(root, 'node_modules/react'), join(consumer, 'node_modules/react'));
 
 	const smoke = `
 		const root = await import('segment-state');
@@ -103,6 +120,18 @@ try {
 		}
 		if ('useValue' in core || 'attachPort' in core || 'dehydrate' in core || 'hydrate' in core) {
 			throw new Error('core entry point contains a renderer or adapter export');
+		}
+		const react = await import('segment-state/react');
+		for (const name of ['useDraft', 'useStatus', 'useValue']) {
+			if (typeof react[name] !== 'function') {
+				throw new Error('missing React export from segment-state/react: ' + name);
+			}
+			if (react[name] === root[name]) {
+				throw new Error('the React entry is serving the Octane binding for ' + name);
+			}
+		}
+		if (react.createStore !== core.createStore || react.attachPort !== ports.attachPort || react.dehydrate !== ssr.dehydrate || react.hydrate !== ssr.hydrate) {
+			throw new Error('React entry core exports do not match their subpaths');
 		}
 		let octaneSubpathBlocked = false;
 		try {
