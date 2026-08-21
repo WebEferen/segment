@@ -10,6 +10,7 @@
 
 <p align="center">
 	<a href="https://github.com/WebEferen/segment/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/WebEferen/segment/ci.yml?branch=main&amp;style=flat-square&amp;label=CI" alt="CI status" /></a>
+	<a href="https://www.npmjs.com/package/segment-state"><img src="https://img.shields.io/npm/dm/segment-state?style=flat-square&amp;label=downloads&amp;color=5B5751" alt="npm downloads per month" /></a>
 	<a href="https://github.com/WebEferen/segment/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-5B5751?style=flat-square" alt="MIT license" /></a>
 	<a href="https://nodejs.org/"><img src="https://img.shields.io/badge/Node.js-%E2%89%A522-5B5751?style=flat-square" alt="Node.js 22 or newer" /></a>
 	<a href="https://webeferen.github.io/segment/"><img src="https://img.shields.io/badge/docs-GitHub%20Pages-E90826?style=flat-square" alt="Documentation" /></a>
