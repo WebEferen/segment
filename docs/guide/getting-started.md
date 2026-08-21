@@ -18,9 +18,11 @@ pnpm add segment-state octane
 
 :::
 
-Octane is a required peer dependency. Segment ships as ESM and requires Node.js 22
-or newer when it runs under Node. Server, worker, and tooling code that must not
-load Octane can import the DOM-free engine from `segment-state/core`.
+Install the renderer you use: `octane` for the hooks on the package root, or
+`react` (19 or newer) for the `segment-state/react` entry point. Both peers are
+optional. Segment ships as ESM and requires Node.js 22 or newer when it runs under
+Node. Server, worker, and tooling code that must not load a renderer can import
+the DOM-free engine from `segment-state/core`.
 
 ## Create a store
 

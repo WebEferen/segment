@@ -8,7 +8,7 @@ async function bundle(name, contents) {
 		stdin: { contents, resolveDir: root, sourcefile: `${name}.ts` },
 		bundle: true,
 		define: { 'process.env.NODE_ENV': '"production"' },
-		external: ['octane'],
+		external: ['octane', 'react'],
 		format: 'esm',
 		logLevel: 'silent',
 		metafile: true,
@@ -28,6 +28,11 @@ async function bundle(name, contents) {
 
 function optionalInputs(result) {
 	return result.inputs.filter((input) => /dist\/(?:octane|ports|ssr)\//.test(input));
+}
+
+/** The React binding proper; the react entry INDEX is re-exports and not counted. */
+function reactBindingInputs(result) {
+	return result.inputs.filter((input) => input.includes('dist/react/hooks'));
 }
 
 const rootStore = await bundle(
@@ -50,8 +55,16 @@ const ports = await bundle(
 	'with-ports',
 	'import { createStore, attachPort } from "./dist/index.js"; const store = createStore({ count: 0 }); export const attach = (port) => attachPort(store, port);',
 );
+const reactStore = await bundle(
+	'react-store',
+	'import { createStore } from "./dist/react/index.js"; export const store = createStore({ count: 0 });',
+);
+const react = await bundle(
+	'with-react',
+	'import { useValue } from "./dist/react/index.js"; export { useValue };',
+);
 
-for (const result of [rootStore, core]) {
+for (const result of [rootStore, core, reactStore]) {
 	const unexpected = optionalInputs(result);
 	if (unexpected.length > 0) {
 		throw new Error(
@@ -59,8 +72,22 @@ for (const result of [rootStore, core]) {
 		);
 	}
 }
+for (const result of [rootStore, core, octane, ssr, ports, reactStore]) {
+	if (reactBindingInputs(result).length > 0) {
+		throw new Error(`${result.name} bundle retained the React binding`);
+	}
+}
 if (rootStore.gzip > 10_000) {
 	throw new Error(`root store bundle is ${rootStore.gzip} B gzip; budget is 10000 B`);
+}
+if (reactStore.gzip > 10_000) {
+	throw new Error(`react store bundle is ${reactStore.gzip} B gzip; budget is 10000 B`);
+}
+if (reactBindingInputs(react).length === 0) {
+	throw new Error('React import did not retain the React binding');
+}
+if (optionalInputs(react).length > 0) {
+	throw new Error('React import retained Octane, ports, or SSR');
 }
 if (!optionalInputs(octane).some((input) => input.includes('dist/octane/'))) {
 	throw new Error('root Octane import did not retain the Octane binding');
@@ -78,6 +105,6 @@ if (optionalInputs(ports).some((input) => input.includes('dist/ssr/'))) {
 	throw new Error('ports import retained the SSR entry point');
 }
 
-for (const result of [rootStore, core, octane, ssr, ports]) {
+for (const result of [rootStore, core, octane, ssr, ports, reactStore, react]) {
 	console.log(`${result.name}: ${result.gzip} B gzip`);
 }

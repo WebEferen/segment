@@ -229,6 +229,45 @@ There is no provider. A ref knows which store owns it. On the server, create one
 store per request and pass that request's refs down; a module-global mutable store
 would be shared across concurrent requests.
 
+## React integration
+
+The same three hooks ship for React (19 or newer) through the `segment-state/react`
+entry point. It re-exports the whole application API, so a React application
+imports everything from one place and never loads Octane; the `react` and `octane`
+peers are both optional, and an application installs only its own renderer.
+
+```tsx
+import { useDraft, useStatus, useValue } from 'segment-state/react';
+
+function ProfileEditor({ id }: { id: string }) {
+	const [profile] = useValue(store.state.users.at(id));
+	const avatar = useStatus(store.state.users.at(id).avatar);
+	const [name, setName, publishName] = useDraft(store.state.users.at(id).name);
+
+	return (
+		<>
+			<p>{profile?.name}</p>
+			<p>{avatar.status}</p>
+			<input value={name} onChange={(event) => setName(event.currentTarget.value)} />
+			<button onClick={publishName}>Save</button>
+		</>
+	);
+}
+```
+
+The contract matches the Octane binding. `useValue` reads any address and waits on
+a fetched one through `<Suspense>`; its array form starts every resource load
+before suspending once, so independent loads overlap instead of forming a
+waterfall. `useStatus` never suspends. `useDraft` keeps a local edit, publishes it
+on demand, and adopts a source that moved underneath an unsaved draft within the
+same render. A selector passed as `useValue(store, select)` must be referentially
+stable (module scope or `useCallback`); it becomes an anonymous derivation for the
+life of the subscription and is released on unmount.
+
+There is still no provider. The package root serves the Octane binding, so a React
+application imports from `segment-state/react`, with `segment-state/core` for
+infrastructure modules that must not load any renderer.
+
 ## Server rendering and hydration
 
 Segment does not move a live store from Node to the browser. The server and client

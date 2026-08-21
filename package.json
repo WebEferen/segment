@@ -1,14 +1,15 @@
 {
   "name": "segment-state",
   "version": "0.1.0",
-  "description": "Path-addressed state for Octane with O(observed) memory and transactional commits.",
+  "description": "Path-addressed state for Octane and React with O(observed) memory and transactional commits.",
   "keywords": [
     "state-management",
     "state",
     "store",
     "typescript",
     "fine-grained-reactivity",
-    "octane"
+    "octane",
+    "react"
   ],
   "author": {
     "name": "Michal Makowski",
@@ -54,6 +55,11 @@
       "import": "./dist/ports/index.js",
       "default": "./dist/ports/index.js"
     },
+    "./react": {
+      "types": "./dist/react/index.d.ts",
+      "import": "./dist/react/index.js",
+      "default": "./dist/react/index.js"
+    },
     "./ssr": {
       "types": "./dist/ssr/index.d.ts",
       "import": "./dist/ssr/index.js",
@@ -69,6 +75,7 @@
     "test": "vitest run",
     "test:core": "vitest run --project segment-core",
     "test:octane": "vitest run --project segment-octane",
+    "test:react": "vitest run --project segment-react",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "agents:generate": "rulesync generate",
@@ -92,17 +99,30 @@
     "prepublishOnly": "pnpm check && pnpm pack:check"
   },
   "peerDependencies": {
-    "octane": "^0.1.21"
+    "octane": "^0.1.21",
+    "react": "^19.0.0"
+  },
+  "peerDependenciesMeta": {
+    "octane": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@changesets/cli": "2.31.1",
     "@tsrx/prettier-plugin": "0.3.118",
     "@types/node": "24.13.3",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
     "esbuild": "0.28.1",
     "jotai": "2.20.2",
     "jsdom": "29.1.1",
     "octane": "0.1.21",
     "prettier": "3.9.6",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
     "redux": "5.0.1",
     "rulesync": "16.3.0",
     "terser": "5.49.0",
