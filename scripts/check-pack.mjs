@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -85,6 +85,16 @@ try {
 		consumer,
 		{ env: isolatedNpmEnvironment() },
 	);
+	// The tarball ships no src/, so a sourcemap is only useful to a consumer's
+	// bundler or debugger when the original source is embedded in the map.
+	const installed = join(consumer, 'node_modules', manifest.name);
+	for (const entry of await readdir(installed, { recursive: true })) {
+		if (!entry.endsWith('.js.map')) continue;
+		const map = JSON.parse(await readFile(join(installed, entry), 'utf8'));
+		if (!Array.isArray(map.sourcesContent) || map.sourcesContent.length !== map.sources.length) {
+			throw new Error(`packed sourcemap does not embed its sources: ${entry}`);
+		}
+	}
 	// Before any renderer peer exists in the consumer, the renderer-free entry
 	// points must import and run: that is what "optional peers" promises.
 	const peerFreeSmoke = `
