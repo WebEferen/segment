@@ -92,6 +92,7 @@
     "benchmark:build": "node benchmarks/segment-state/build.mjs",
     "benchmark": "pnpm benchmark:build && node --expose-gc --import tsx benchmarks/segment-state/run.mjs",
     "benchmark:hot": "pnpm benchmark:build && node benchmarks/segment-state/hot.mjs",
+    "benchmark:load": "pnpm benchmark:build && node --expose-gc benchmarks/segment-state/load.mjs",
     "pack:check": "node scripts/check-pack.mjs",
     "tree-shake:check": "node scripts/check-tree-shaking.mjs",
     "check": "pnpm format:check && pnpm agents:check && pnpm typecheck && pnpm test && pnpm build && pnpm tree-shake:check && pnpm playground:build && pnpm docs:build",

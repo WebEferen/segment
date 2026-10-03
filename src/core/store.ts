@@ -443,8 +443,25 @@ export function createStore<S>(shape: S): Store<S> {
 	let reentrancy = 0;
 	let deferred: Map<string, StagedWrite> | null = null;
 	let deferredSource = 'reentrant';
-	const evaluating = new Set<string>();
+	const evaluating = new Set<SchemaNode>();
 	const observedDerived = new Set<Node>();
+	/**
+	 * Fixed cells live here, not in a trie node, until something observes them.
+	 * `id` on the schema node is the index. Versions are per cell, so a sibling
+	 * write does not move `revision()` of a cell that has no node of its own.
+	 */
+	const cellValues: unknown[] = [];
+	const cellVers: number[] = [];
+	/** Nodes a commit wrote, drained by `pushDerived`. */
+	const touched: Node[] = [];
+	/** Fixed-cell schemas a commit wrote. Subscribers are keyed by the schema. */
+	const touchedSchemas: SchemaNode[] = [];
+	/** Replace-all walks descendants as well as ancestors. */
+	let touchDeep = false;
+	/** Derived -> anchors it is currently subscribed to. */
+	const linkOf = new Map<Node, Set<SchemaNode | Node>>();
+	/** Anchor -> observed deriveds that last read through it. */
+	const subs = new Map<SchemaNode | Node, Node[]>();
 	const commitSubs = new Set<(commit: Commit) => void>();
 	let portCount = 0;
 	/**
@@ -461,6 +478,7 @@ export function createStore<S>(shape: S): Store<S> {
 	function materializeFixed(schemaNode: SchemaNode, node: Node): void {
 		node.pinned = true;
 		if (schemaNode.kind === CELL) {
+			// A root that IS a cell. Nested fixed cells take the table below.
 			node.value = schemaNode.init;
 			return;
 		}
@@ -470,6 +488,15 @@ export function createStore<S>(shape: S): Store<S> {
 		}
 		if (schemaNode.children === null) return;
 		for (const [key, child] of schemaNode.children) {
+			// A fixed cell needs no trie node until it is observed. The value
+			// table is enough for get/set/revision, and it is one slot instead
+			// of a 14-field node per key.
+			if (child.kind === CELL && child.fixed) {
+				child.id = cellValues.length;
+				cellValues.push(child.init);
+				cellVers.push(0);
+				continue;
+			}
 			materializeFixed(child, childOf(node, key, child));
 		}
 	}
@@ -555,6 +582,7 @@ export function createStore<S>(shape: S): Store<S> {
 		segments: readonly string[],
 		schemaNode: SchemaNode,
 	): unknown {
+		if (schemaNode.id >= 0) return cellValues[schemaNode.id];
 		if (bulk === null) {
 			const node = findNode(segments);
 			return node === null ? fallback(schemaNode) : node.value;
@@ -577,8 +605,101 @@ export function createStore<S>(shape: S): Store<S> {
 	// while the global version has not moved (nothing was written at all), and
 	// only after a commit are its dependencies re-read.
 
-	function evaluateDerived(segments: readonly string[], schemaNode: SchemaNode): unknown {
-		const node = findNode(segments);
+	interface DepFrame {
+		deps: (readonly string[])[];
+		values: unknown[];
+		vers: number[];
+		anchors: (SchemaNode | Node | null)[];
+		ids: number[];
+		len: number;
+		reuse: boolean;
+		cached: DerivedCache | null;
+	}
+	const frames: DepFrame[] = [];
+	let frameDepth = 0;
+
+	function isTrieNode(value: SchemaNode | Node): value is Node {
+		return 'seg' in value;
+	}
+
+	/** Deepest pinned node on a path. Unpinned nodes are pruned, so a subscription cannot hang off one. */
+	function pinnedAnchor(segments: readonly string[]): Node {
+		let node = root;
+		let pinned = root;
+		for (let i = 0; i < segments.length; i++) {
+			const child = lookupChild(node, segments[i]);
+			if (child === undefined) break;
+			node = child;
+			if (child.pinned) pinned = child;
+		}
+		return pinned;
+	}
+
+	function scratchGet<T>(ref: Ref<T>): T {
+		const frame = frames[frameDepth - 1];
+		const refObj = ref as object;
+		const internals =
+			ref !== null && (typeof ref === 'object' || typeof ref === 'function')
+				? internalsOf(refObj)
+				: undefined;
+		const depSegments = internals !== undefined ? internals.segments : refSegments(ref);
+		let sn =
+			internals !== undefined ? (internals.schema as SchemaNode | null | undefined) : undefined;
+		if (sn === undefined) {
+			sn = resolveSchema(schema, depSegments);
+			if (internals !== undefined) internals.schema = sn ?? null;
+		}
+		let value: unknown;
+		let anchor: SchemaNode | Node | null = null;
+		let id = -1;
+		let ver = -1;
+		if (sn === null || sn === undefined) value = undefined;
+		else if (sn.kind === DERIVED) {
+			value = evaluateDerived(depSegments, sn);
+			anchor = findNode(depSegments);
+		} else if (sn.id >= 0) {
+			id = sn.id;
+			value = cellValues[id];
+			ver = cellVers[id];
+			anchor = sn;
+		} else if (sn.kind === BRANCH || sn.kind === BULK) {
+			value = readValue(depSegments, sn);
+			const n = findNode(depSegments);
+			if (n !== null && n.pinned) {
+				ver = n.ver;
+				anchor = n;
+			} else {
+				ver = revisionOf(depSegments);
+				anchor = pinnedAnchor(depSegments);
+			}
+		} else {
+			value = readValue(depSegments, sn);
+			anchor = pinnedAnchor(depSegments);
+		}
+		const i = frame.len++;
+		// Always record on the frame. A reuse that fails halfway must not leave a hole
+		// that a later pass could mistake for "already copied".
+		frame.deps[i] = depSegments;
+		frame.values[i] = value;
+		frame.vers[i] = ver;
+		frame.anchors[i] = anchor;
+		frame.ids[i] = id;
+		const cached = frame.cached;
+		if (frame.reuse && cached !== null && cached.deps[i] === depSegments) {
+			cached.depValues[i] = value;
+			cached.depVers[i] = ver;
+			cached.anchors[i] = anchor;
+			cached.depIds[i] = id;
+		} else frame.reuse = false;
+		return value as T;
+	}
+
+	function evaluateDerived(
+		segments: readonly string[],
+		schemaNode: SchemaNode,
+		known?: Node | null,
+	): unknown {
+		const node = known !== undefined && known !== null ? known : findNode(segments);
 		const cached = node === null ? null : node.dcache;
 		if (cached !== null) {
 			if (cached.checkedAt === version) return node!.value;
@@ -587,54 +708,62 @@ export function createStore<S>(shape: S): Store<S> {
 				return node!.value;
 			}
 		}
-		// Joined below the cache check: the path is only needed to name an error and to
-		// key the cycle guard, and reading a clean derivation is a hot path.
-		const path = segments.join('/');
 		if (schemaNode.derive === null) {
-			fail(`derived "${path}" has no implementation; supply it in .with()`);
+			fail(`derived "${segments.join('/')}" has no implementation; supply it in .with()`);
 		}
-		if (evaluating.has(path)) fail(`derived "${path}" depends on itself`);
-		evaluating.add(path);
-		const deps: (readonly string[])[] = [];
-		const depValues: unknown[] = [];
-		const depVers: number[] = [];
-		const get: Get = (<T>(ref: Ref<T>): T => {
-			const depSegments = refSegments(ref);
-			const sn = resolveSchema(schema, depSegments);
-			const value =
-				sn === null
-					? undefined
-					: sn.kind === DERIVED
-						? evaluateDerived(depSegments, sn)
-						: readValue(depSegments, sn);
-			deps.push(depSegments);
-			depValues.push(value);
-			// A container is mutated in place by write-through, so its identity is
-			// stable across every write under it and `Object.is` would report a
-			// changed record as clean forever. Its subtree stamp moves instead.
-			depVers.push(
-				sn !== null && (sn.kind === BRANCH || sn.kind === BULK) ? revisionOf(depSegments) : -1,
-			);
-			return value as T;
-		}) as Get;
+		if (evaluating.has(schemaNode)) fail(`derived "${segments.join('/')}" depends on itself`);
+		evaluating.add(schemaNode);
+		let frame = frames[frameDepth];
+		if (frame === undefined) {
+			frame = frames[frameDepth] = {
+				deps: [],
+				values: [],
+				vers: [],
+				anchors: [],
+				ids: [],
+				len: 0,
+				reuse: false,
+				cached: null,
+			};
+		}
+		frame.len = 0;
+		frame.reuse = cached !== null;
+		frame.cached = cached;
+		frameDepth++;
 		let value: unknown;
 		try {
-			value = schemaNode.derive!(get);
+			value = schemaNode.derive!(scratchGet as Get);
 		} finally {
-			evaluating.delete(path);
+			evaluating.delete(schemaNode);
+			frameDepth--;
 		}
+		const same =
+			(frame.reuse && cached !== null && cached.deps.length === frame.len && frame.len > 0) ||
+			(frame.reuse && cached !== null && cached.deps.length === 0 && frame.len === 0);
+		if (!same) {
+			const deps = frame.deps.slice(0, frame.len);
+			const depValues = frame.values.slice(0, frame.len);
+			const depVers = frame.vers.slice(0, frame.len);
+			const anchors = frame.anchors.slice(0, frame.len);
+			const depIds = frame.ids.slice(0, frame.len);
+			if (node !== null) {
+				if (cached !== null) {
+					cached.deps = deps;
+					cached.depValues = depValues;
+					cached.depVers = depVers;
+					cached.anchors = anchors;
+					cached.depIds = depIds;
+					cached.checkedAt = version;
+				} else {
+					node.dcache = { deps, depValues, depVers, anchors, depIds, checkedAt: version };
+				}
+			}
+		} else if (cached !== null) cached.checkedAt = version;
 		if (node !== null) {
 			node.value = value;
-			// Mutate an existing record rather than replacing it: a re-evaluation
-			// already allocates the dep arrays, and need not add another object.
-			if (cached !== null) {
-				cached.deps = deps;
-				cached.depValues = depValues;
-				cached.depVers = depVers;
-				cached.checkedAt = version;
-			} else {
-				node.dcache = { deps, depValues, depVers, checkedAt: version };
-			}
+			// Same deps keep the same subscriber edges. Relink only when the set moved,
+			// and only while something is actually observing this derivation.
+			if (observedDerived.has(node) && !same) relink(node);
 		}
 		return value;
 	}
@@ -643,13 +772,76 @@ export function createStore<S>(shape: S): Store<S> {
 		const deps = cached.deps;
 		const values = cached.depValues;
 		const vers = cached.depVers;
+		const ids = cached.depIds;
+		const anchors = cached.anchors;
 		for (let i = 0; i < deps.length; i++) {
+			const id = ids[i];
+			if (id >= 0) {
+				if (cellVers[id] !== vers[i]) return false;
+				continue;
+			}
 			const ver = vers[i];
 			if (ver >= 0) {
-				if (revisionOf(deps[i]) !== ver) return false;
+				const anchor = anchors[i];
+				if (anchor !== null && isTrieNode(anchor)) {
+					if (anchor.ver !== ver) return false;
+				} else if (revisionOf(deps[i]) !== ver) return false;
 			} else if (!Object.is(readSegments(deps[i]), values[i])) return false;
 		}
 		return true;
+	}
+
+	function addSub(anchor: SchemaNode | Node, derived: Node): void {
+		let list = subs.get(anchor);
+		if (list === undefined) subs.set(anchor, (list = []));
+		list.push(derived);
+	}
+
+	function removeSub(anchor: SchemaNode | Node, derived: Node): void {
+		const list = subs.get(anchor);
+		if (list === undefined) return;
+		const at = list.indexOf(derived);
+		if (at >= 0) list.splice(at, 1);
+		if (list.length === 0) subs.delete(anchor);
+	}
+
+	function expandAnchors(node: Node, out: Set<SchemaNode | Node>, seen: Set<Node>): void {
+		if (seen.has(node)) return;
+		seen.add(node);
+		const cache = node.dcache;
+		if (cache === null) {
+			out.add(root);
+			return;
+		}
+		if (cache.anchors.length === 0) return;
+		for (let i = 0; i < cache.anchors.length; i++) {
+			const anchor = cache.anchors[i];
+			if (anchor === null) {
+				out.add(root);
+				continue;
+			}
+			if (isTrieNode(anchor) && anchor.schema.kind === DERIVED) expandAnchors(anchor, out, seen);
+			else out.add(anchor);
+		}
+	}
+
+	function relink(derived: Node): void {
+		const next = new Set<SchemaNode | Node>();
+		expandAnchors(derived, next, new Set());
+		const prev = linkOf.get(derived);
+		if (prev !== undefined) {
+			for (const anchor of prev) if (!next.has(anchor)) removeSub(anchor, derived);
+		}
+		for (const anchor of next) if (prev === undefined || !prev.has(anchor)) addSub(anchor, derived);
+		if (next.size === 0) linkOf.delete(derived);
+		else linkOf.set(derived, next);
+	}
+
+	function unlink(derived: Node): void {
+		const prev = linkOf.get(derived);
+		if (prev === undefined) return;
+		for (const anchor of prev) removeSub(anchor, derived);
+		linkOf.delete(derived);
 	}
 
 	/** `revision()` without the schema validation, for internal staleness checks. */
@@ -666,6 +858,12 @@ export function createStore<S>(shape: S): Store<S> {
 		if (i === segments.length - 1 && node.leaves !== null) {
 			const rec = node.leaves.get(segments[i]);
 			if (rec !== undefined) return rec.ver;
+		}
+		if (i < segments.length) {
+			// A fixed cell has no trie node until it is observed. Its own stamp
+			// still has to ignore sibling writes, which the ancestor's does not.
+			const sn = resolveSchema(schema, segments);
+			if (sn !== null && sn.id >= 0) return cellVers[sn.id];
 		}
 		return node.ver;
 	}
@@ -688,8 +886,17 @@ export function createStore<S>(shape: S): Store<S> {
 		bulk: { node: Node; start: number } | null,
 		segments: readonly string[],
 		value: unknown,
+		known?: SchemaNode | null,
 	): void {
 		if (bulk === null) {
+			const sn = known !== undefined && known !== null ? known : resolveSchema(schema, segments);
+			if (sn !== null && sn.id >= 0) {
+				cellValues[sn.id] = value;
+				cellVers[sn.id] = version;
+				if (observedDerived.size > 0) touchedSchemas.push(sn);
+				if (sn.live !== null) sn.live.value = value;
+				return;
+			}
 			const node = findNode(segments);
 			if (node === null) fail(`no such path "${segments.join('/')}"`);
 			node.value = value;
@@ -722,6 +929,7 @@ export function createStore<S>(shape: S): Store<S> {
 			node = child;
 		}
 		bumpToRoot(node, version);
+		if (observedDerived.size > 0) touched.push(node);
 		if (i === segments.length) {
 			collectObservers(node, out);
 			return;
@@ -939,7 +1147,16 @@ export function createStore<S>(shape: S): Store<S> {
 		const schemaNode = stagedSchema(staged);
 		const prev = readAt(bulk, staged.segments, schemaNode);
 		if (Object.is(prev, staged.value)) return;
-		applyWrite(staged, staged.segments, bulk, schemaNode.kind === CELL, prev, staged.value, source);
+		applyWrite(
+			staged,
+			staged.segments,
+			bulk,
+			schemaNode.kind === CELL,
+			prev,
+			staged.value,
+			source,
+			schemaNode,
+		);
 	}
 
 	function commit(writes: Map<string, StagedWrite>, source: string): void {
@@ -979,11 +1196,50 @@ export function createStore<S>(shape: S): Store<S> {
 	 * subscribed to a value nobody wrote directly, so nothing else would wake them.
 	 */
 	function pushDerived(woken: Set<Observer>): void {
-		for (const node of observedDerived) {
-			const had = node.dcache !== null;
-			const previous = had ? node.value : undefined;
-			const next = evaluateDerived(nodeSegments(node), node.schema);
-			if (had && Object.is(previous, next)) continue;
+		const seeds = touched.splice(0, touched.length);
+		const schemas = touchedSchemas.splice(0, touchedSchemas.length);
+		const deep = touchDeep;
+		touchDeep = false;
+		if (observedDerived.size === 0) return;
+
+		const queued = new Set<Node>();
+		const dirty: Node[] = [];
+		const original = new Map<Node, unknown>();
+		const hadCache = new Map<Node, boolean>();
+		const enqueue = (derived: Node): void => {
+			if (!observedDerived.has(derived) || queued.has(derived)) return;
+			queued.add(derived);
+			hadCache.set(derived, derived.dcache !== null);
+			original.set(derived, derived.value);
+			dirty.push(derived);
+		};
+		const fromAnchor = (anchor: SchemaNode | Node): void => {
+			const list = subs.get(anchor);
+			if (list !== undefined) for (const derived of list) enqueue(derived);
+		};
+		for (const sn of schemas) fromAnchor(sn);
+		const visit = (node: Node): void => {
+			fromAnchor(node);
+			if (node.schema.id >= 0) fromAnchor(node.schema);
+			if (!deep) return;
+			if (node.children !== null) for (const child of node.children.values()) visit(child);
+		};
+		for (const node of seeds) {
+			for (let n: Node | null = node; n !== null; n = n.parent) fromAnchor(n);
+			if (deep) visit(node);
+		}
+
+		for (let i = 0; i < dirty.length; i++) {
+			const node = dirty[i];
+			const next = evaluateDerived(nodeSegments(node), node.schema, node);
+			const previous = original.get(node);
+			if (hadCache.get(node) === true && Object.is(previous, next)) continue;
+			// Value moved: observed deriveds that read THIS derived (not only its
+			// cells) need a turn. Transitive cell links usually queued them already;
+			// this covers a derived anchored on the node itself.
+			const list = subs.get(node);
+			// evaluateDerived may relink, which splices subscriber lists.
+			if (list !== undefined) for (const derived of list.slice()) enqueue(derived);
 			bumpToRoot(node, version);
 			collectObservers(node, woken);
 		}
@@ -1127,7 +1383,12 @@ export function createStore<S>(shape: S): Store<S> {
 
 	function wakeAt(segments: readonly string[]): void {
 		const woken = new Set<Observer>();
+		const noted = touched.length;
+		const notedSchemas = touchedSchemas.length;
 		wakeForWrite(segments, woken);
+		// This wake is not a commit, so it must not leak seeds into the next push.
+		touched.length = noted;
+		touchedSchemas.length = notedSchemas;
 		wakeOnly(woken);
 	}
 
@@ -1361,6 +1622,8 @@ export function createStore<S>(shape: S): Store<S> {
 	}
 
 	function sweepResources(woken: Set<Observer>): void {
+		const noted = touched.length;
+		const notedSchemas = touchedSchemas.length;
 		for (const [path, state] of resourceStates) {
 			if (state.status !== 'ready') continue;
 			if (!state.stale && state.deps.length > 0) {
@@ -1378,6 +1641,8 @@ export function createStore<S>(shape: S): Store<S> {
 			}
 			dropResourceIfIdle(path, state);
 		}
+		touched.length = noted;
+		touchedSchemas.length = notedSchemas;
 	}
 
 	function markResourceStale(
@@ -1467,7 +1732,7 @@ export function createStore<S>(shape: S): Store<S> {
 			return;
 		}
 
-		applyWrite(target, segments, bulk, true, prev, value, source);
+		applyWrite(target, segments, bulk, true, prev, value, source, schemaNode);
 	}
 
 	/**
@@ -1486,9 +1751,10 @@ export function createStore<S>(shape: S): Store<S> {
 		prev: unknown,
 		value: unknown,
 		source: string | undefined,
+		schemaNode?: SchemaNode | null,
 	): void {
 		version++;
-		writeAt(bulk, segments, value);
+		writeAt(bulk, segments, value, schemaNode);
 
 		let woken: Set<Observer> | null = null;
 		let single: Observer | null = null;
@@ -1524,6 +1790,7 @@ export function createStore<S>(shape: S): Store<S> {
 			const node = findNode(segments);
 			if (node !== null) {
 				bumpToRoot(node, version);
+				if (observedDerived.size > 0) touched.push(node);
 				const sole = deepObserverCount === 0 && node.obs === null ? node.obs1 : soleObserver(node);
 				if (sole === undefined) {
 					woken = new Set();
@@ -1582,6 +1849,7 @@ export function createStore<S>(shape: S): Store<S> {
 	function wakeFallback(segments: readonly string[]): Observer | null | undefined {
 		const node = deepestNode(segments);
 		bumpToRoot(node, version);
+		if (observedDerived.size > 0) touched.push(node);
 		return deepObserverCount === 0 ? null : soleDeep(node);
 	}
 
@@ -1755,6 +2023,12 @@ export function createStore<S>(shape: S): Store<S> {
 				throw error;
 			}
 			observedDerived.add(target);
+			relink(target);
+		}
+		if (schemaNode.id >= 0) {
+			target.value = cellValues[schemaNode.id];
+			target.ver = cellVers[schemaNode.id];
+			schemaNode.live = target;
 		}
 		// Observing a resource is what makes its load start and its staleness
 		// tracked, so the two lifecycles are tied together deliberately.
@@ -1836,8 +2110,10 @@ export function createStore<S>(shape: S): Store<S> {
 			// so a leaf's detach — the list-teardown path — skips both stores.
 			if (target.schema.kind === DERIVED) {
 				observedDerived.delete(target);
+				unlink(target);
 				target.dcache = null;
 			}
+			if (target.schema.live === target) target.schema.live = null;
 			// A store with no resources never builds the path at all. One that has them
 			// rebuilds it from the node, which is why the observer need not hold it.
 			if (resourceStates.size > 0) {
@@ -1897,6 +2173,8 @@ export function createStore<S>(shape: S): Store<S> {
 			arity: 0,
 			transient: false,
 			flat: false,
+			id: -1,
+			live: null,
 		};
 		if (schema.children === null) schema.children = new Map();
 		schema.children.set(seg, schemaNode);
@@ -1934,6 +2212,7 @@ export function createStore<S>(shape: S): Store<S> {
 		const node = lookupChild(root, seg);
 		if (node === undefined) return;
 		observedDerived.delete(node);
+		unlink(node);
 		node.pinned = false;
 		root.children!.delete(seg);
 	}
@@ -1960,6 +2239,8 @@ export function createStore<S>(shape: S): Store<S> {
 			arity: -1,
 			transient: false,
 			flat: false,
+			id: -1,
+			live: null,
 		};
 		if (schema.children === null) schema.children = new Map();
 		schema.children.set(seg, schemaNode);
@@ -2340,6 +2621,7 @@ export function createStore<S>(shape: S): Store<S> {
 										throw error;
 									}
 									observedDerived.add(target);
+									relink(target);
 								} else if (inner.kind === RESOURCE) {
 									const segs = [...segments, child];
 									ensureResource(segs.join('/'), segs, inner);
@@ -2377,18 +2659,65 @@ export function createStore<S>(shape: S): Store<S> {
 				return view;
 			}
 			default: {
-				// A schema-bounded group is built ONCE per store, so eager children cost
-				// nothing per access afterwards and every read is a plain property read.
-				// Building the shared prototype instead would move that work into
-				// `createStore`, where it measured 16% slower for a 400-leaf schema.
+				// Fixed groups used to build a ref per child up front. That ref was
+				// pure cost on createStore: nothing reads it until the caller does.
+				// A proxy builds the child on first access and then stores it as an
+				// own property, so the steady-state read is the property itself.
+				// Measured against the eager refs, create of 1,000 cells got faster
+				// and a held-ref read did not regress (the ref is already built).
 				if (schemaNode.fixed) {
 					const base = path ?? segments.join('/');
-					const view: Record<string, unknown> = { path: base };
-					if (schemaNode.children !== null) {
-						for (const [key, child] of schemaNode.children) {
-							view[key] = makeView(child, base === '' ? key : `${base}/${key}`, [...segments, key]);
-						}
-					}
+					const obj: Record<string | symbol, unknown> = { path: base };
+					const view = new Proxy(obj, {
+						get(target, key) {
+							if (typeof key === 'symbol' || Object.prototype.hasOwnProperty.call(target, key)) {
+								return target[key];
+							}
+							if (typeof key !== 'string') return undefined;
+							const child = schemaNode.children === null ? undefined : schemaNode.children.get(key);
+							if (child === undefined) return undefined;
+							const childSegments = segments.length === 0 ? [key] : [...segments, key];
+							const childPath = base === '' ? key : `${base}/${key}`;
+							let built: unknown;
+							if (child.kind === CELL || child.kind === DERIVED) {
+								const ref = new RefImpl(childPath, childSegments, holder);
+								ref.schema = child;
+								ref.bulk = null;
+								ref.bulkResolved = true;
+								built = ref;
+							} else built = makeView(child, childPath, childSegments);
+							target[key] = built;
+							return built;
+						},
+						has(target, key) {
+							if (Object.prototype.hasOwnProperty.call(target, key)) return true;
+							return (
+								typeof key === 'string' &&
+								schemaNode.children !== null &&
+								schemaNode.children.has(key)
+							);
+						},
+						ownKeys(target) {
+							const keys = Reflect.ownKeys(target);
+							if (schemaNode.children === null) return keys;
+							const seen = new Set<string | symbol>(keys);
+							for (const key of schemaNode.children.keys()) if (!seen.has(key)) keys.push(key);
+							return keys;
+						},
+						getOwnPropertyDescriptor(target, key) {
+							if (Object.prototype.hasOwnProperty.call(target, key)) {
+								return Object.getOwnPropertyDescriptor(target, key);
+							}
+							if (
+								typeof key === 'string' &&
+								schemaNode.children !== null &&
+								schemaNode.children.has(key)
+							) {
+								return { enumerable: true, configurable: true, writable: true };
+							}
+							return undefined;
+						},
+					});
 					stampAddress(view, segments);
 					return view;
 				}
@@ -2429,6 +2758,10 @@ export function createStore<S>(shape: S): Store<S> {
 		const prev = node.value;
 		node.value = next;
 		bumpToRoot(node, version);
+		if (observedDerived.size > 0) {
+			touched.push(node);
+			touchDeep = true;
+		}
 		// Every materialized descendant's contents were just replaced wholesale, so
 		// their stamps move too; otherwise `revision(rows.at(id))` would keep
 		// reporting the pre-replacement number, a missed real change.

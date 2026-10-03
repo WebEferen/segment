@@ -1,3 +1,4 @@
+import type { Node } from './node.js';
 import type {
 	ActionDef,
 	AnyDef,
@@ -117,6 +118,15 @@ export interface SchemaNode {
 	 * set for a nested holder, whose own node is transient.
 	 */
 	flat: boolean;
+	/**
+	 * Index into the owning store's fixed-cell value table, or -1.
+	 * A fixed cell is not given a trie node until something observes it; the
+	 * table is the value, so creating a wide store does not allocate a node
+	 * and a ref per key.
+	 */
+	id: number;
+	/** Trie node while a fixed cell is observed, else null. */
+	live: Node | null;
 }
 
 // ── Markers ─────────────────────────────────────────────────────────────────
@@ -241,6 +251,8 @@ function node(kind: number, path: string, fixed: boolean): SchemaNode {
 		arity: 0,
 		transient: false,
 		flat: false,
+		id: -1,
+		live: null,
 	};
 }
 
