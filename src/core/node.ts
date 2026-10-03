@@ -3,16 +3,23 @@ import type { SchemaNode } from './schema.js';
 /** What a derived node remembered from its last evaluation. */
 export interface DerivedCache {
 	/** The addresses read during the evaluation, and the values they held. */
-	deps: readonly (readonly string[])[];
-	depValues: readonly unknown[];
+	deps: (readonly string[])[];
+	depValues: unknown[];
 	/**
-	 * Per-dep subtree stamp for container and fixed-cell deps, -1 otherwise.
-	 * A branch or bulk value is mutated in place, so its identity is stable
-	 * across every write under it; a fixed cell's own stamp ignores siblings.
+	 * Per-dep stamp. For a fixed cell this is that cell's own version; for a
+	 * container it is the node version; -1 means the value has to be re-read
+	 * (a derived dep, or a leaf with no stable version of its own).
 	 */
-	depVers: readonly number[];
-	/** Fixed-cell schema id for that dep, or -1. Avoids a path walk on the clean check. */
-	depIds: readonly number[];
+	depVers: number[];
+	/**
+	 * Parallel to `deps`. A fixed cell is keyed by its schema node (it may have
+	 * no trie node); a container is keyed by its pinned trie node; a derived dep
+	 * is the derived node so linking can walk through to the cells under it.
+	 * Null means "any write", which is correct and coarse.
+	 */
+	anchors: (SchemaNode | Node | null)[];
+	/** Fixed-cell table index parallel to `deps`, or -1. */
+	depIds: number[];
 	/** Global version at the last check; an unchanged counter means clean. */
 	checkedAt: number;
 }
