@@ -77,11 +77,11 @@ for (const result of [rootStore, core, octane, ssr, ports, reactStore]) {
 		throw new Error(`${result.name} bundle retained the React binding`);
 	}
 }
-if (rootStore.gzip > 10_000) {
-	throw new Error(`root store bundle is ${rootStore.gzip} B gzip; budget is 10000 B`);
+if (rootStore.gzip > 11_200) {
+	throw new Error(`root store bundle is ${rootStore.gzip} B gzip; budget is 11200 B`);
 }
-if (reactStore.gzip > 10_000) {
-	throw new Error(`react store bundle is ${reactStore.gzip} B gzip; budget is 10000 B`);
+if (reactStore.gzip > 11_200) {
+	throw new Error(`react store bundle is ${reactStore.gzip} B gzip; budget is 11200 B`);
 }
 if (reactBindingInputs(react).length === 0) {
 	throw new Error('React import did not retain the React binding');

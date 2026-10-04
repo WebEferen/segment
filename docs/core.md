@@ -107,10 +107,12 @@ value it never wanted to hold.
 
 ### Eager versus lazy materialization
 
-Nodes above every bulk holder are bounded by the schema, so they are materialized
-once at construction and pinned. Everything below a bulk holder is unbounded, so it
-materializes only on observation; flat cell leaves use the lighter records described
-above instead of nodes.
+Branches, derivations, and bulk holders above every bulk holder are bounded by the
+schema, so they are materialized once at construction and pinned. A plain fixed cell
+is not: its value lives in a table on the store, and a trie node appears only while
+something observes it, then goes away with the last observer. Everything below a bulk
+holder is unbounded, so it materializes only on observation; flat cell leaves use the
+lighter records described above instead of nodes.
 
 That split has an observable consequence: a **schema-bounded derivation caches even
 with no observer** (its node is pinned, so there is somewhere to cache), while a
@@ -199,9 +201,9 @@ holder is built once per KEY, so its view is now one allocation over a prototype
 shared by every key of that segment, with one accessor per field that builds its child
 on first use and caches it as an own property. The same read is 251 ns at every width.
 
-A schema-bounded group keeps the eager form: it is built once per store, so eager
-children cost nothing per access afterwards, and moving that work into a shared
-prototype measured 16% slower in `createStore` for a 400-leaf schema.
+A schema-bounded group builds each child on first access and then caches it as an
+own property. Building every ref during `createStore` made a wide store pay for
+addresses nobody had read yet.
 
 ### What a mounted row costs
 
