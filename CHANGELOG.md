@@ -1,5 +1,15 @@
 # segment-state
 
+## 0.3.0
+
+### Minor Changes
+
+- e5d722c: Require Octane 0.8.0 for the optional Octane binding. The published `useValue`, `useStatus`, and `useDraft` API is unchanged.
+
+### Patch Changes
+
+- 3e2f593: Keep plain fixed cells out of the trie until they are observed, and recompute only the derivations that read a written address.
+
 ## 0.2.1
 
 ### Patch Changes
