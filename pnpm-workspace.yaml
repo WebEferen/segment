@@ -9,5 +9,5 @@ allowBuilds:
   tldjs: false
 
 minimumReleaseAgeExclude:
-  - octane@0.8.0
+  - octane@0.9.1
   - rulesync@16.3.0

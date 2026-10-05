@@ -108,7 +108,7 @@
     "prepublishOnly": "pnpm check && pnpm pack:check"
   },
   "peerDependencies": {
-    "octane": "^0.8.0",
+    "octane": "^0.9.0",
     "react": "^19.0.0"
   },
   "peerDependenciesMeta": {
@@ -128,7 +128,7 @@
     "esbuild": "0.28.1",
     "jotai": "2.20.2",
     "jsdom": "29.1.1",
-    "octane": "0.8.0",
+    "octane": "0.9.1",
     "prettier": "3.9.6",
     "react": "19.2.8",
     "react-dom": "19.2.8",
