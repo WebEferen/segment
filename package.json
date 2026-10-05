@@ -1,6 +1,6 @@
 {
   "name": "segment-state",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Path-addressed state for Octane and React with O(observed) memory and transactional commits.",
   "keywords": [
     "state-management",

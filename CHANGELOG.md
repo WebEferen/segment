@@ -1,5 +1,11 @@
 # segment-state
 
+## 0.4.0
+
+### Minor Changes
+
+- fa9d6b6: Require Octane 0.9.1 for the optional Octane binding. The published `useValue`, `useStatus`, and `useDraft` API is unchanged.
+
 ## 0.3.0
 
 ### Minor Changes
